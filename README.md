@@ -1,8 +1,5 @@
 # NotchOverlay
 
-Dynamic Island v notchi Macu, který
-monitoruje běžící Claude Code agenty. Nativní AppKit, žádné závislosti.
-
 ## Instalace (nativní appka na pozadí)
 
 Jedním příkazem (stačí Xcode Command Line Tools):
