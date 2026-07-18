@@ -1,5 +1,9 @@
 # NotchOverlay
 
+![Kompaktní stav v notchi](docs/compact.png)
+
+![Expandovaný panel se sessions](docs/expanded.png)
+
 ## Instalace (nativní appka na pozadí)
 
 Jedním příkazem (stačí Xcode Command Line Tools):
