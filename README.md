@@ -5,8 +5,16 @@ monitoruje běžící Claude Code agenty. Nativní AppKit, žádné závislosti.
 
 ## Instalace (nativní appka na pozadí)
 
+Jedním příkazem (stačí Xcode Command Line Tools):
+
 ```sh
-./install.sh   # build → ~/Applications/NotchOverlay.app + LaunchAgent
+curl -fsSL https://raw.githubusercontent.com/MatejKrcek/NotchOverlay/main/install.sh | bash
+```
+
+Nebo z naklonovaného repa:
+
+```sh
+./install.sh   # build → /Applications/NotchOverlay.app + LaunchAgent
                # (start po přihlášení, auto-restart po pádu)
 ```
 
