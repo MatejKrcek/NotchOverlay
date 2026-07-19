@@ -9,6 +9,8 @@ struct QuotaStatus: Equatable {
     var fiveHour: QuotaWindow?
     var sevenDay: QuotaWindow?
     var sevenDayOpus: QuotaWindow?
+    /// Paid: limit Fable 5 (Mythos tier), pokud ho usage API vrací.
+    var sevenDayFable: QuotaWindow?
 }
 
 enum QuotaFetchState: Equatable {
@@ -104,6 +106,7 @@ final class QuotaFetcher {
             q.fiveHour = Self.window(in: obj, keys: ["five_hour", "5h", "session"])
             q.sevenDay = Self.window(in: obj, keys: ["seven_day", "7d", "week", "weekly"])
             q.sevenDayOpus = Self.window(in: obj, keys: ["seven_day_opus", "seven_day_sonnet"])
+            q.sevenDayFable = Self.window(in: obj, keys: ["seven_day_fable", "seven_day_mythos", "fable_weekly", "fable"])
             if q.fiveHour != nil || q.sevenDay != nil { result = q }
             else { self.debug("v odpovědi nejsou známá okna; dump: \(String(data: data, encoding: .utf8)?.prefix(500) ?? "")") }
         }.resume()

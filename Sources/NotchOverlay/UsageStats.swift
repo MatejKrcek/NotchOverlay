@@ -8,7 +8,7 @@ final class UsageStats {
     private let queue = DispatchQueue(label: "usage-stats", qos: .background)
     private var timer: DispatchSourceTimer?
     private var offsets: [String: UInt64] = [:]
-    private var events: [(date: Date, output: Int, cost: Double)] = []
+    private var events: [(date: Date, output: Int, cost: Double, path: String)] = []
 
     private let projectsDir = NSString(string: "~/.claude/projects").expandingTildeInPath
 
@@ -59,6 +59,7 @@ final class UsageStats {
                 sum.todayOutputTokens += e.output
                 sum.todayCostUSD += e.cost
             }
+            sum.perSessionOutput[e.path, default: 0] += e.output
         }
         DispatchQueue.main.async { self.onUpdate?(sum) }
     }
@@ -96,7 +97,7 @@ final class UsageStats {
             let cost = Double(inp) / 1e6 * p.inp
                      + Double(out) / 1e6 * p.out
                      + Double(cacheRead) / 1e6 * p.cache
-            events.append((date, out, cost))
+            events.append((date, out, cost, path))
         }
         offsets[path] = consumed
     }

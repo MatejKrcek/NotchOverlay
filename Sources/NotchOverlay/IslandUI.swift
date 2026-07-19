@@ -87,7 +87,7 @@ final class IslandController: NSObject {
     /// Křídla v liště vedle notche — jen tak široká, jak potřebuje obsah,
     /// aby zakryla co nejméně menu baru (a nic pod ním).
     private var leftWingWidth: CGFloat { (CGFloat(min(max(sessions.count, 1), 5)) * 13 + 34) * sizeScale }
-    private var rightWingWidth: CGFloat { 120 * sizeScale }
+    private var rightWingWidth: CGFloat { (Display.showQuotaInBar ? 120 : 30) * sizeScale }
     /// Odstup obsahu pravého křídla od hrany notche, aby se „5h" neschovávalo pod výřezem.
     private let notchGap: CGFloat = 20
 
@@ -465,6 +465,7 @@ final class IslandController: NSObject {
     /// Pozn.: alignment MUSÍ být v paragraph stylu — NSTextField.alignment
     /// se u attributed stringů ignoruje.
     private func rightAttributed() -> NSAttributedString {
+        guard Display.showQuotaInBar else { return NSAttributedString() }
         let para = NSMutableParagraphStyle()
         para.alignment = .right
         let s = NSMutableAttributedString()
@@ -505,6 +506,11 @@ final class IslandController: NSObject {
             if let r = wk.resetsAt { s += " · resets in \(remainingString(until: r))" }
             parts.append(s)
         }
+        if let fb = quota.sevenDayFable {
+            var s = "fable: \(fb.pct)%"
+            if let r = fb.resetsAt { s += " · resets in \(remainingString(until: r))" }
+            parts.append(s)
+        }
         return parts.isEmpty ? "quota unavailable" : parts.joined(separator: "    ")
     }
 
@@ -533,6 +539,10 @@ final class IslandController: NSObject {
         var parts = [status, s.project]
         if let b = s.branch { parts.append(b) }
         if !s.model.isEmpty { parts.append(s.model) }
+        if Display.showSessionTokens,
+           let tok = usage.perSessionOutput[s.transcriptPath], tok > 0 {
+            parts.append("\(shortTokens(tok)) tok")
+        }
         return parts.joined(separator: " · ")
     }
 
