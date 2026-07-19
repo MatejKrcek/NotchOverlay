@@ -51,11 +51,18 @@ final class MainWindowController: NSObject {
         v.addSubview(subtitle)
 
         let overlayLabel = NSTextField(labelWithString: "Island in the notch")
-        overlayLabel.frame = NSRect(x: 24, y: 160, width: 250, height: 20)
+        overlayLabel.frame = NSRect(x: 24, y: 160, width: 200, height: 20)
         v.addSubview(overlayLabel)
+        let paidBadge = NSTextField(labelWithString: "paid")
+        paidBadge.font = .systemFont(ofSize: 11)
+        paidBadge.textColor = .secondaryLabelColor
+        paidBadge.alignment = .right
+        paidBadge.frame = NSRect(x: width - 24 - 38 - 60, y: 160, width: 54, height: 16)
+        v.addSubview(paidBadge)
+        // Free verze: island nejde vypnout — přepínání je paid funkce.
         let overlay = NSSwitch(frame: NSRect(x: width - 24 - 38, y: 156, width: 38, height: 24))
-        overlay.target = self
-        overlay.action = #selector(toggleOverlay(_:))
+        overlay.isEnabled = false
+        overlay.toolTip = "Turning the island off is available in the paid version."
         v.addSubview(overlay)
         overlaySwitch = overlay
 
@@ -89,10 +96,6 @@ final class MainWindowController: NSObject {
 
         w.contentView = v
         window = w
-    }
-
-    @objc private func toggleOverlay(_ sender: NSSwitch) {
-        setOverlayOn?(sender.state == .on)
     }
 
     @objc private func toggleSounds(_ sender: NSSwitch) {

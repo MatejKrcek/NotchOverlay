@@ -57,10 +57,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
             LoginController.shared.present()
         }
-        if UserDefaults.standard.bool(forKey: "overlayHidden") {
-            island.setVisible(false)
-        }
-
         monitor.start()
         usage.start()
         hooks.start()
