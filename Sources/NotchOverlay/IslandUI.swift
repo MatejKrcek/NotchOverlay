@@ -77,10 +77,16 @@ final class IslandController: NSObject {
     private let rowHeight: CGFloat = 46
     private let headerHeight: CGFloat = 26
     private let maxVisibleRows = 8
+    /// Paid: měřítko islandu (1.0 = lícuje s notchem, víc = přesahuje pod něj).
+    private var sizeScale: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "islandScale")
+        return v == 0 ? 1 : CGFloat(min(max(v, 1.0), 1.5))
+    }
+
     /// Křídla v liště vedle notche — jen tak široká, jak potřebuje obsah,
     /// aby zakryla co nejméně menu baru (a nic pod ním).
-    private var leftWingWidth: CGFloat { CGFloat(min(max(sessions.count, 1), 5)) * 13 + 34 }
-    private let rightWingWidth: CGFloat = 120
+    private var leftWingWidth: CGFloat { (CGFloat(min(max(sessions.count, 1), 5)) * 13 + 34) * sizeScale }
+    private var rightWingWidth: CGFloat { 120 * sizeScale }
     /// Odstup obsahu pravého křídla od hrany notche, aby se „5h" neschovávalo pod výřezem.
     private let notchGap: CGFloat = 20
 
@@ -146,7 +152,7 @@ final class IslandController: NSObject {
         self.screen = screen
 
         hasNotch = screen.safeAreaInsets.top > 0
-        topInset = hasNotch ? screen.safeAreaInsets.top : 34
+        topInset = (hasNotch ? screen.safeAreaInsets.top : 34) * sizeScale
         if hasNotch, let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea {
             notchWidth = screen.frame.width - l.width - r.width
         } else {
@@ -215,6 +221,11 @@ final class IslandController: NSObject {
     func setVisible(_ visible: Bool) {
         overlayVisible = visible
         if visible { panel?.orderFrontRegardless() } else { panel?.orderOut(nil) }
+    }
+
+    /// Po změně islandScale v UserDefaults přestaví panel s novou geometrií.
+    func sizeChanged() {
+        rebuildForCurrentScreen()
     }
 
     private var visibleRowCount: Int { min(max(1, sessions.count), maxVisibleRows) }

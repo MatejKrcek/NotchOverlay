@@ -57,6 +57,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
             LoginController.shared.present()
         }
+        MainWindowController.shared.onSizeChange = { [weak self] in
+            self?.island.sizeChanged()
+        }
         if UserDefaults.standard.bool(forKey: "overlayHidden") {
             island.setVisible(false)
         }
