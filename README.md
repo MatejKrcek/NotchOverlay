@@ -1,145 +1,151 @@
 # NotchOverlay
 
-**Dynamic Island pro Mac — sleduj svoje AI coding agenty přímo v notchi.**
+**Dynamic Island for your Mac — watch your AI coding agents right in the notch.**
 
-NotchOverlay promění výřez v displeji MacBooku v živý přehled běžících
-Claude Code sessions: barevné tečky říkají, kdo pracuje, kdo skončil a kdo
-čeká na tebe, vedle toho tikají reálná procenta tvých rate limitů. Najetím
-myší se island rozbalí do panelu s detaily každé session — odtud skočíš
-rovnou do správného terminálu, nebo povolíš/zamítneš permission request
-jedním klikem, bez přepínání oken. Nativní AppKit, žádné závislosti,
-tokeny neopouští tvůj stroj.
+NotchOverlay turns the MacBook display cutout into a live dashboard of your
+running Claude Code sessions: colored dots tell you who's working, who's done
+and who's waiting for you, with your real rate-limit percentages ticking
+alongside. Hover to expand the island into a panel with per-session details —
+jump straight into the right terminal, or approve/deny a permission request
+with one click, without switching windows. Native AppKit, zero dependencies,
+tokens never leave your machine.
 
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow)](https://buymeacoffee.com/matejkrcek)
 
-## Jak to vypadá
+*Czech version: [README.cs.md](README.cs.md)*
 
-Kompaktní stav v notchi — tečky sessions vlevo, spotřeba limitů vpravo:
+## What it looks like
 
-![Kompaktní stav v notchi](docs/compact.png)
+Compact state in the notch — session dots on the left, limit usage on the right:
 
-Hover → expandovaný panel se všemi sessions, kvótami a Allow/Deny tlačítky:
+![Compact state in the notch](docs/compact.png)
 
-![Expandovaný panel se sessions](docs/expanded.png)
+Hover → expanded panel with all sessions, quotas and Allow/Deny buttons:
 
-## Instalace
+![Expanded panel with sessions](docs/expanded.png)
 
-### Homebrew (doporučeno)
+## Install
+
+### Homebrew (recommended)
 
 ```sh
 brew tap matejkrcek/notchoverlay
-brew trust matejkrcek/notchoverlay   # novější Homebrew vyžaduje důvěru cizím tapům
+brew trust matejkrcek/notchoverlay   # newer Homebrew requires trusting third-party taps
 brew install --cask notchoverlay
 ```
 
-Quarantine flag se smaže automaticky (postflight), není potřeba nic povolovat.
+The quarantine flag is removed automatically (postflight) — nothing to approve
+manually.
 
 ### DMG
 
-Stáhni `NotchOverlay.dmg` z [Releases](https://github.com/MatejKrcek/NotchOverlay/releases)
-a přetáhni appku do Applications. Appka je ad-hoc podepsaná, takže ji
-Gatekeeper po stažení zablokuje („nelze ověřit vývojáře"). Povolení:
+Download `NotchOverlay.dmg` from [Releases](https://github.com/MatejKrcek/NotchOverlay/releases)
+and drag the app into Applications. The app is ad-hoc signed, so Gatekeeper
+blocks it after download ("cannot verify the developer"). To allow it:
 
-- pravý klik na appku → **Open** → potvrdit **Open** (starší macOS:
-  System Settings → Privacy & Security → **Open Anyway**), nebo
-- v terminálu: `xattr -cr /Applications/NotchOverlay.app`
+- right-click the app → **Open** → confirm **Open** (older macOS:
+  System Settings → Privacy & Security → **Open Anyway**), or
+- in the terminal: `xattr -cr /Applications/NotchOverlay.app`
 
-### Ze zdrojáků (stačí Xcode Command Line Tools)
+### From source (Xcode Command Line Tools are enough)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MatejKrcek/NotchOverlay/main/install.sh | bash
 ```
 
-Nebo z naklonovaného repa:
+Or from a cloned repo:
 
 ```sh
 ./install.sh   # build → /Applications/NotchOverlay.app + LaunchAgent
-               # (start po přihlášení, auto-restart po pádu)
+               # (starts at login, auto-restarts on crash)
 ```
 
-> Rozdíl: instalace ze zdrojáků přidá i LaunchAgent (appka startuje po
-> přihlášení a po pádu se restartuje). Homebrew/DMG appku jen nainstaluje —
-> spouštíš ji sám z /Applications.
+> Difference: installing from source also adds a LaunchAgent (the app starts
+> at login and restarts after a crash). Homebrew/DMG just installs the app —
+> you launch it yourself from /Applications.
 
-## První spuštění
+## First launch
 
-1. Otevři **NotchOverlay** z /Applications — ukáže se okno s nastavením
-   a v notchi se objeví island. Okno kdykoli otevřeš znovu kliknutím na
-   appku nebo **pravým klikem na island**.
-2. **Sign in with Claude** (v okně) — kvóty se jinak čtou z credentials
-   Claude Code, takže pokud používáš Claude Code, obvykle není potřeba.
-3. Při prvním použití **Allow/Deny** tlačítek si macOS řekne o oprávnění
-   **Automation** (System Events + tvůj terminál) — povol ho, jinak
-   tlačítka nemají jak poslat odpověď do terminálu.
-4. Volitelně: `hooks/install-hooks.sh` pro přesnější eventy (viz níže).
+1. Open **NotchOverlay** from /Applications — a settings window appears and
+   the island shows up in the notch. Reopen the window anytime by clicking
+   the app or **right-clicking the island**.
+2. **Sign in with Claude** (in the window) — quotas are otherwise read from
+   Claude Code credentials, so if you use Claude Code you usually don't need to.
+3. The first time you use the **Allow/Deny** buttons, macOS asks for the
+   **Automation** permission (System Events + your terminal) — grant it,
+   otherwise the buttons have no way to send the answer to the terminal.
+4. Optional: `hooks/install-hooks.sh` for more precise events (see below).
 
 ## Update
 
 - Homebrew: `brew update && brew upgrade --cask notchoverlay`
-- DMG: stáhnout nový z Releases a přepsat appku
-- Ze zdrojáků: znovu spustit instalační one-liner
+- DMG: download a new one from Releases and replace the app
+- From source: run the install one-liner again
 
-## Odinstalace
+## Uninstall
 
 ```sh
 # Homebrew:
 brew uninstall --cask notchoverlay
 
-# DMG / zdrojáky:
+# DMG / from source:
 launchctl bootout gui/$UID/com.matejkrcek.notchoverlay 2>/dev/null
 rm -rf /Applications/NotchOverlay.app ~/Library/LaunchAgents/com.matejkrcek.notchoverlay.plist
 ```
 
-Ukončení bez odinstalace: okno appky → **Quit NotchOverlay** (zůstane
-vypnutá do dalšího přihlášení).
+Quit without uninstalling: app window → **Quit NotchOverlay** (stays off
+until your next login).
 
-## Vývoj bez instalace
+## Development without installing
 
 ```sh
-./build.sh          # kompilace (swiftc; SPM je na tomto stroji rozbité)
-./bin/NotchOverlay  # spuštění na zkoušku
+./build.sh          # compile (swiftc; SPM is broken on this machine)
+./bin/NotchOverlay  # run it for a spin
 ```
 
-## Funkce
+## Features
 
-- **Kompaktní stav v notchi** — stavové tečky agentů vlevo, vpravo „5h X %"
-  (reálná spotřeba 5h okna z API) nebo ⚠ N, když něco čeká na tebe.
-  Na displeji bez notche plovoucí lišta.
-- **Hover → expanze** — panel se rozbalí pod notch: hlavička s kvótami
-  (5h okno + týdenní limit v %, časy resetů) a řádek na session
-  (název z ai-title, stav, projekt, branch, model, čas od poslední aktivity).
-- **Reálné kvóty** — OAuth token z Keychain (vlastní login, jinak „Claude
-  Code-credentials") → `api.anthropic.com/api/oauth/usage`, refresh à 5 min.
-  Token neopouští stroj jinam než na API Anthropicu. Debug: `~/.claude/vibe-quota-debug.txt`.
-- **Barvy**: modrá = pracuje · zelená = hotovo · oranžová = potřebuje tvou
-  akci (permission/otázka/zaseknuto) · červená = fail (API error).
-- **Klik na řádek → jump do terminálu** (TERM_PROGRAM z hooků, jinak první
-  běžící známý terminál: iTerm2, Ghostty, Warp, WezTerm, kitty, Alacritty,
-  Terminal, VS Code/Cursor).
-- **Allow/Deny tlačítka** u permission requestů — aktivují terminál a pošlou
-  klávesu do dialogu (1 = povolit, Esc = zamítnout; vyžaduje oprávnění
-  Automation pro System Events).
-- **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
-  hotovo, deny). Defaultně vypnuté; zapnutí v nastavení.
-- **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
-- **Nastavení** (klik na appku nebo pravý klik na island) — island on/off,
-  velikost (0.7–1.5×), zvuky, tokeny per session, kvóta v liště, druhá řádka
-  hlavičky (Codex limit z lokálních session dat / Fable 5 limit), účty
-  Claude/Codex/Gemini se sign in/out a Quit.
+- **Compact state in the notch** — agent status dots on the left, "5h X %"
+  on the right (real 5-hour window usage from the API), or ⚠ N when
+  something waits for you. A floating pill on displays without a notch.
+- **Hover → expand** — the panel unfolds below the notch: a header with
+  quotas (5h window + weekly limit in %, reset times) and a row per session
+  (ai-title name, state, project, branch, model, time since last activity).
+- **Real quotas** — OAuth token from Keychain (own login, otherwise
+  "Claude Code-credentials") → `api.anthropic.com/api/oauth/usage`,
+  refreshed every 5 min. The token never leaves your machine except to the
+  Anthropic API. Debug: `~/.claude/vibe-quota-debug.txt`.
+- **Colors**: blue = working · green = done · orange = needs your action
+  (permission/question/stalled) · red = failed (API error).
+- **Click a row → jump to the terminal** (TERM_PROGRAM from hooks, otherwise
+  the first running known terminal: iTerm2, Ghostty, Warp, WezTerm, kitty,
+  Alacritty, Terminal, VS Code/Cursor).
+- **Allow/Deny buttons** on permission requests — they activate the terminal
+  and send a keystroke into the dialog (1 = allow, Esc = deny; requires the
+  Automation permission for System Events).
+- **8-bit sounds** — synthesized square wave (start, permission, question,
+  done, deny). Off by default; enable in settings.
+- **Non-activating overlay** — the panel never steals focus or activation.
+- **Settings** (click the app or right-click the island) — island on/off,
+  size (0.7–1.5×), sounds, tokens per session, quota in the bar, header
+  second line (Codex limit from local session data / Fable 5 limit),
+  Claude/Codex/Gemini accounts with sign in/out, and Quit.
 
-## Zdroje dat
+## Data sources
 
-1. **Pasivně**: tail transkriptů `~/.claude/projects/**/*.jsonl` každých 1,5 s
-   (stav ze závěru transkriptu + mtime). Funguje bez jakékoli konfigurace.
-2. **Hooky** (přesnější eventy): `hooks/install-hooks.sh` zaregistruje
-   `hooks/vibe-event.sh` do `~/.claude/settings.json` pro SessionStart,
-   Notification, Stop a SessionEnd. Eventy tečou přes frontu souborů
-   `~/.claude/vibe-events/`. **Odinstalace**: vrátit
-   `~/.claude/settings.json.vibe-backup` nebo smazat záznamy s `vibe-event.sh`.
+1. **Passive**: tailing transcripts `~/.claude/projects/**/*.jsonl` every
+   1.5 s (state from the transcript tail + mtime). Works with zero
+   configuration.
+2. **Hooks** (more precise events): `hooks/install-hooks.sh` registers
+   `hooks/vibe-event.sh` in `~/.claude/settings.json` for SessionStart,
+   Notification, Stop and SessionEnd. Events flow through a file queue in
+   `~/.claude/vibe-events/`. **Uninstall**: restore
+   `~/.claude/settings.json.vibe-backup` or remove the `vibe-event.sh` entries.
 
-Debug: aktuální stav sessions app průběžně zapisuje do `~/.claude/vibe-state.json`.
+Debug: the app continuously writes the current session state to
+`~/.claude/vibe-state.json`.
 
-## Podpora
+## Support
 
-Appka je zdarma a open source. Jestli ti šetří čas, můžeš mi koupit kafe:
-**[buymeacoffee.com/matejkrcek](https://buymeacoffee.com/matejkrcek)** ☕
+The app is free and open source. If it saves you time, you can buy me a
+coffee: **[buymeacoffee.com/matejkrcek](https://buymeacoffee.com/matejkrcek)** ☕
