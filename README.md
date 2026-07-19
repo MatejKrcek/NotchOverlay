@@ -51,6 +51,9 @@ Vývoj bez instalace:
 - **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
   hotovo, deny). Defaultně vypnuté; zapnutí: pravý klik → Sounds.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
+- **Hlavní okno** — klik na appku ve Finderu/Docku otevře okno s přepínačem
+  islandu, zvuků, přihlášením ke Claude a tlačítkem Quit (appka pak neběží
+  do dalšího přihlášení).
 
 ## Zdroje dat
 

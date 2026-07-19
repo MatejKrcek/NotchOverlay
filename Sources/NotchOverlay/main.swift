@@ -46,10 +46,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             LoginController.shared.present()
         }
 
+        MainWindowController.shared.isOverlayOn = { [weak self] in
+            self?.island.overlayVisible ?? true
+        }
+        MainWindowController.shared.setOverlayOn = { [weak self] on in
+            self?.island.setVisible(on)
+            UserDefaults.standard.set(!on, forKey: "overlayHidden")
+        }
+        MainWindowController.shared.onSignIn = { [weak self] in
+            LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
+            LoginController.shared.present()
+        }
+        if UserDefaults.standard.bool(forKey: "overlayHidden") {
+            island.setVisible(false)
+        }
+
         monitor.start()
         usage.start()
         hooks.start()
         quota.start()
+
+        // LaunchAgent startuje s --agent (bez okna); ruční spuštění okno ukáže.
+        if !CommandLine.arguments.contains("--agent") {
+            MainWindowController.shared.present()
+        }
+    }
+
+    /// Klik na appku ve Finderu/Docku, když už běží → hlavní okno.
+    func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows: Bool) -> Bool {
+        MainWindowController.shared.present()
+        return false
     }
     /// Debug/introspekce: aktuální stav sessions v ~/.claude/vibe-state.json
     private static func dumpState(_ sessions: [AgentSession], quota: QuotaStatus?) {

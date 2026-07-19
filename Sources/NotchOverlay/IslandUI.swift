@@ -66,6 +66,8 @@ final class IslandController: NSObject {
     private var quota: QuotaStatus?          // poslední úspěšná data (drží se i při výpadku)
     private var quotaState: QuotaFetchState = .starting
     var onSignInRequested: (() -> Void)?
+    /// Overlay lze schovat z hlavního okna; stav se drží i přes rebuild obrazovek.
+    private(set) var overlayVisible = true
     private var expanded = false
     private var animating = false
     private var pendingRender = false
@@ -207,7 +209,12 @@ final class IslandController: NSObject {
         animating = false
         renderStrip()
         renderList()
-        p.orderFrontRegardless()
+        if overlayVisible { p.orderFrontRegardless() }
+    }
+
+    func setVisible(_ visible: Bool) {
+        overlayVisible = visible
+        if visible { panel?.orderFrontRegardless() } else { panel?.orderOut(nil) }
     }
 
     private var visibleRowCount: Int { min(max(1, sessions.count), maxVisibleRows) }
