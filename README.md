@@ -1,8 +1,24 @@
 # NotchOverlay
 
+**Dynamic Island pro Mac — sleduj svoje AI coding agenty přímo v notchi.**
+
+NotchOverlay promění výřez v displeji MacBooku v živý přehled běžících
+Claude Code sessions: barevné tečky říkají, kdo pracuje, kdo skončil a kdo
+čeká na tebe, vedle toho tikají reálná procenta tvých rate limitů. Najetím
+myší se island rozbalí do panelu s detaily každé session — odtud skočíš
+rovnou do správného terminálu, nebo povolíš/zamítneš permission request
+jedním klikem, bez přepínání oken. Nativní AppKit, žádné závislosti,
+tokeny neopouští tvůj stroj.
+
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-☕-yellow)](https://buymeacoffee.com/matejkrcek)
 
+## Jak to vypadá
+
+Kompaktní stav v notchi — tečky sessions vlevo, spotřeba limitů vpravo:
+
 ![Kompaktní stav v notchi](docs/compact.png)
+
+Hover → expandovaný panel se všemi sessions, kvótami a Allow/Deny tlačítky:
 
 ![Expandovaný panel se sessions](docs/expanded.png)
 
