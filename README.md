@@ -145,7 +145,21 @@ until your next login).
 Debug: the app continuously writes the current session state to
 `~/.claude/vibe-state.json`.
 
+## Contributing
+
+Contributions are welcome! The repo is public, but only the maintainer can
+push — the standard GitHub flow applies:
+
+1. Fork the repo and create a branch.
+2. Make your change (`./build.sh` must pass).
+3. Open a pull request — I review and merge.
+
 ## Support
 
 The app is free and open source. If it saves you time, you can buy me a
 coffee: **[buymeacoffee.com/matejkrcek](https://buymeacoffee.com/matejkrcek)** ☕
+
+---
+
+Developed by **[Matej Krcek](https://www.linkedin.com/in/matejkrcek)** from
+**[Kreedl](https://kreedl.com)**.

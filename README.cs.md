@@ -141,7 +141,21 @@ vypnutá do dalšího přihlášení).
 
 Debug: aktuální stav sessions app průběžně zapisuje do `~/.claude/vibe-state.json`.
 
+## Kontribuce
+
+Příspěvky vítány! Repo je veřejné, ale pushovat může jen maintainer —
+platí standardní GitHub flow:
+
+1. Forkni repo a vytvoř branch.
+2. Udělej změnu (`./build.sh` musí projít).
+3. Otevři pull request — projdu a mergnu.
+
 ## Podpora
 
 Appka je zdarma a open source. Jestli ti šetří čas, můžeš mi koupit kafe:
 **[buymeacoffee.com/matejkrcek](https://buymeacoffee.com/matejkrcek)** ☕
+
+---
+
+Developed by **[Matej Krcek](https://www.linkedin.com/in/matejkrcek)** from
+**[Kreedl](https://kreedl.com)**.
