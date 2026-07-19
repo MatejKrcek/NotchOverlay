@@ -5,8 +5,8 @@ final class Sounds {
     static let shared = Sounds()
 
     var enabled: Bool {
-        get { !UserDefaults.standard.bool(forKey: "soundsDisabled") }
-        set { UserDefaults.standard.set(!newValue, forKey: "soundsDisabled") }
+        get { UserDefaults.standard.bool(forKey: "soundsEnabled") }
+        set { UserDefaults.standard.set(newValue, forKey: "soundsEnabled") }
     }
 
     private let engine = AVAudioEngine()

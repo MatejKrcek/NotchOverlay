@@ -49,7 +49,7 @@ Vývoj bez instalace:
   klávesu do dialogu (1 = povolit, Esc = zamítnout; vyžaduje oprávnění
   Automation pro System Events).
 - **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
-  hotovo, deny). Vypnutí: pravý klik → Zvuky.
+  hotovo, deny). Defaultně vypnuté; zapnutí: pravý klik → Sounds.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
 
 ## Zdroje dat
