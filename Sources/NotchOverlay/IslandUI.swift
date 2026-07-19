@@ -75,12 +75,19 @@ final class IslandController: NSObject {
 
     private let expandedWidth: CGFloat = 440
     private let rowHeight: CGFloat = 46
-    private let headerHeight: CGFloat = 26
+    private var headerHeight: CGFloat { Display.headerSecondLine == "none" ? 26 : 42 }
     private let maxVisibleRows = 8
+    /// Paid: měřítko šířky islandu — roste jen do stran (křídla), výška je
+    /// fixní podle notche.
+    private var sizeScale: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "islandScale")
+        return v == 0 ? 1 : CGFloat(min(max(v, 0.7), 1.5))
+    }
+
     /// Křídla v liště vedle notche — jen tak široká, jak potřebuje obsah,
     /// aby zakryla co nejméně menu baru (a nic pod ním).
-    private var leftWingWidth: CGFloat { CGFloat(min(max(sessions.count, 1), 5)) * 13 + 34 }
-    private let rightWingWidth: CGFloat = 120
+    private var leftWingWidth: CGFloat { (CGFloat(min(max(sessions.count, 1), 5)) * 13 + 34) * sizeScale }
+    private var rightWingWidth: CGFloat { (Display.showQuotaInBar ? 120 : 30) * sizeScale }
     /// Odstup obsahu pravého křídla od hrany notche, aby se „5h" neschovávalo pod výřezem.
     private let notchGap: CGFloat = 20
 
@@ -217,6 +224,11 @@ final class IslandController: NSObject {
         if visible { panel?.orderFrontRegardless() } else { panel?.orderOut(nil) }
     }
 
+    /// Po změně islandScale v UserDefaults přestaví panel s novou geometrií.
+    func sizeChanged() {
+        rebuildForCurrentScreen()
+    }
+
     private var visibleRowCount: Int { min(max(1, sessions.count), maxVisibleRows) }
 
     private func expandedHeight() -> CGFloat {
@@ -334,11 +346,15 @@ final class IslandController: NSObject {
             signIn.action = #selector(signInClicked)
             listView.addSubview(signIn)
         } else {
-            let header = NSTextField(labelWithString: quotaHeaderText())
+            let twoLines = Display.headerSecondLine != "none"
+            var text = quotaHeaderText()
+            if twoLines { text += "\n" + secondLineText() }
+            let header = NSTextField(labelWithString: text)
             header.font = .monospacedSystemFont(ofSize: 10.5, weight: .medium)
             header.textColor = NSColor.white.withAlphaComponent(0.55)
             header.alignment = .center
-            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: 16)
+            header.maximumNumberOfLines = 2
+            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: twoLines ? 32 : 16)
             listView.addSubview(header)
         }
 
@@ -453,6 +469,7 @@ final class IslandController: NSObject {
     /// Pozn.: alignment MUSÍ být v paragraph stylu — NSTextField.alignment
     /// se u attributed stringů ignoruje.
     private func rightAttributed() -> NSAttributedString {
+        guard Display.showQuotaInBar else { return NSAttributedString() }
         let para = NSMutableParagraphStyle()
         para.alignment = .right
         let s = NSMutableAttributedString()
@@ -496,6 +513,32 @@ final class IslandController: NSObject {
         return parts.isEmpty ? "quota unavailable" : parts.joined(separator: "    ")
     }
 
+    /// Druhá řádka hlavičky panelu podle nastavení (codex/fable/gemini).
+    private func secondLineText() -> String {
+        switch Display.headerSecondLine {
+        case "codex":
+            switch CodexQuota.latest() {
+            case .window(let pct, let resets):
+                var s = "codex 5h: \(pct)%"
+                if let r = resets { s += " · resets in \(remainingString(until: r))" }
+                return s
+            case .planOnly(let plan):
+                return "codex: \(plan) plan · no limit windows"
+            case nil:
+                return "codex: no data"
+            }
+        case "fable":
+            guard let fb = quota?.sevenDayFable else { return "fable: no data" }
+            var s = "fable: \(fb.pct)%"
+            if let r = fb.resetsAt { s += " · resets in \(remainingString(until: r))" }
+            return s
+        case "gemini":
+            return "gemini: no data"
+        default:
+            return ""
+        }
+    }
+
     // modrá = pracuje, zelená = hotovo, oranžová = potřebuje tvou akci, červená = fail
     private func dotColor(_ state: SessionState) -> NSColor {
         switch state {
@@ -521,6 +564,10 @@ final class IslandController: NSObject {
         var parts = [status, s.project]
         if let b = s.branch { parts.append(b) }
         if !s.model.isEmpty { parts.append(s.model) }
+        if Display.showSessionTokens,
+           let tok = usage.perSessionOutput[s.transcriptPath], tok > 0 {
+            parts.append("\(shortTokens(tok)) tok")
+        }
         return parts.joined(separator: " · ")
     }
 
@@ -538,22 +585,8 @@ final class IslandController: NSObject {
         Jump.answerPermission(termProgram: session.termProgram, allow: allow)
     }
 
+    /// Pravý klik na island → rovnou settings okno appky.
     func showMenu(at event: NSEvent, in view: NSView) {
-        let menu = NSMenu()
-        let sounds = NSMenuItem(title: "Sounds", action: #selector(toggleSounds), keyEquivalent: "")
-        sounds.target = self
-        sounds.state = Sounds.shared.enabled ? .on : .off
-        menu.addItem(sounds)
-        let login = NSMenuItem(title: "Sign in with Claude…", action: #selector(signInClicked), keyEquivalent: "")
-        login.target = self
-        menu.addItem(login)
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit NotchOverlay", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        MainWindowController.shared.present()
     }
-
-    @objc private func toggleSounds() { Sounds.shared.enabled.toggle() }
-    @objc private func quit() { NSApp.terminate(nil) }
 }

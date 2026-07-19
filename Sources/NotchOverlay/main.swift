@@ -7,6 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let hooks = HookIngest()
     private let quota = QuotaFetcher()
     private var lastQuota: QuotaStatus?
+    private var quotaFetchState: QuotaFetchState = .starting
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -39,10 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         quota.onState = { [weak self] state in
             self?.island.update(quotaState: state)
+            self?.quotaFetchState = state
             if case .ok(let status) = state { self?.lastQuota = status }
         }
         island.onSignInRequested = { [weak self] in
-            LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
+            LoginController.shared.onSuccess = {
+                UserDefaults.standard.removeObject(forKey: "claudeSignedOut")
+                self?.quota.credentialsChanged()
+            }
             LoginController.shared.present()
         }
 
@@ -54,9 +59,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(!on, forKey: "overlayHidden")
         }
         MainWindowController.shared.onSignIn = { [weak self] in
-            LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
+            LoginController.shared.onSuccess = {
+                UserDefaults.standard.removeObject(forKey: "claudeSignedOut")
+                self?.quota.credentialsChanged()
+            }
             LoginController.shared.present()
         }
+        MainWindowController.shared.onSignOutClaude = { [weak self] in
+            Providers.signOutClaude()
+            self?.quota.credentialsChanged()
+        }
+        MainWindowController.shared.onSizeChange = { [weak self] in
+            self?.island.sizeChanged()
+        }
+        MainWindowController.shared.claudeStatus = { [weak self] in
+            switch self?.quotaFetchState {
+            case .ok: return "signed in"
+            case .signedOut: return "not signed in"
+            default: return "checking…"
+            }
+        }
+        if UserDefaults.standard.bool(forKey: "overlayHidden") {
+            island.setVisible(false)
+        }
+
         monitor.start()
         usage.start()
         hooks.start()
@@ -87,6 +113,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             top["quota"] = [
                 "fiveHourPct": quota.fiveHour?.pct ?? -1,
                 "sevenDayPct": quota.sevenDay?.pct ?? -1,
+                "sevenDayFablePct": quota.sevenDayFable?.pct ?? -1,
                 "fiveHourReset": quota.fiveHour?.resetsAt?.description ?? "",
                 "sevenDayReset": quota.sevenDay?.resetsAt?.description ?? "",
             ]
