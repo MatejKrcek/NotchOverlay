@@ -77,7 +77,8 @@ final class IslandController: NSObject {
     private let rowHeight: CGFloat = 46
     private let headerHeight: CGFloat = 26
     private let maxVisibleRows = 8
-    /// Paid: měřítko islandu (1.0 = lícuje s notchem, víc = přesahuje pod něj).
+    /// Paid: měřítko šířky islandu — roste jen do stran (křídla), výška je
+    /// fixní podle notche.
     private var sizeScale: CGFloat {
         let v = UserDefaults.standard.double(forKey: "islandScale")
         return v == 0 ? 1 : CGFloat(min(max(v, 1.0), 1.5))
@@ -152,7 +153,7 @@ final class IslandController: NSObject {
         self.screen = screen
 
         hasNotch = screen.safeAreaInsets.top > 0
-        topInset = (hasNotch ? screen.safeAreaInsets.top : 34) * sizeScale
+        topInset = hasNotch ? screen.safeAreaInsets.top : 34
         if hasNotch, let l = screen.auxiliaryTopLeftArea, let r = screen.auxiliaryTopRightArea {
             notchWidth = screen.frame.width - l.width - r.width
         } else {

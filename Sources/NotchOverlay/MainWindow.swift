@@ -78,9 +78,15 @@ final class MainWindowController: NSObject {
         let slider = NSSlider(value: 1, minValue: 1, maxValue: 1.5,
                               target: self, action: #selector(sizeChanged(_:)))
         slider.isContinuous = true
-        slider.frame = NSRect(x: 150, y: 120, width: width - 150 - 24, height: 24)
+        slider.frame = NSRect(x: 150, y: 120, width: width - 150 - 24 - 66, height: 24)
         v.addSubview(slider)
         sizeSlider = slider
+        let reset = NSButton(title: "Reset", target: self, action: #selector(resetSize(_:)))
+        reset.bezelStyle = .rounded
+        reset.controlSize = .small
+        reset.font = .systemFont(ofSize: 11)
+        reset.frame = NSRect(x: width - 24 - 58, y: 120, width: 58, height: 22)
+        v.addSubview(reset)
 
         let signIn = NSButton(title: "Sign in with Claude…", target: self, action: #selector(signIn(_:)))
         signIn.bezelStyle = .rounded
@@ -115,6 +121,12 @@ final class MainWindowController: NSObject {
 
     @objc private func sizeChanged(_ sender: NSSlider) {
         UserDefaults.standard.set(sender.doubleValue, forKey: "islandScale")
+        onSizeChange?()
+    }
+
+    @objc private func resetSize(_ sender: NSButton) {
+        UserDefaults.standard.removeObject(forKey: "islandScale")
+        sizeSlider?.doubleValue = 1
         onSizeChange?()
     }
 
