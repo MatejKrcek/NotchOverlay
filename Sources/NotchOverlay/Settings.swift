@@ -11,16 +11,11 @@ enum Display {
         get { !UserDefaults.standard.bool(forKey: "hideQuotaBar") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideQuotaBar") }
     }
-    /// Čí limit ukazuje hlavní řádka v liště ("claude"; codex/gemini zatím
-    /// nemají odkud limity číst — volby jsou v UI, ale neaktivní).
-    static var quotaSource: String {
-        get { UserDefaults.standard.string(forKey: "quotaSource") ?? "claude" }
-        set { UserDefaults.standard.set(newValue, forKey: "quotaSource") }
-    }
-    /// Druhá řádka pod „5h X%": "none" / "claude" (týdenní limit).
-    static var barSecondLine: String {
-        get { UserDefaults.standard.string(forKey: "barSecondLine") ?? "none" }
-        set { UserDefaults.standard.set(newValue, forKey: "barSecondLine") }
+    /// Druhá řádka pod hlavičkou expandovaného panelu:
+    /// "none" / "codex" (lokální session soubory) / "fable" (Fable 5 limit) / "gemini" (zatím nemá zdroj).
+    static var headerSecondLine: String {
+        get { UserDefaults.standard.string(forKey: "headerSecondLine") ?? "none" }
+        set { UserDefaults.standard.set(newValue, forKey: "headerSecondLine") }
     }
 }
 

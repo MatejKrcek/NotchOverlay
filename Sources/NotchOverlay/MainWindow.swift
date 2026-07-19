@@ -24,7 +24,7 @@ final class MainWindowController: NSObject {
     func present() {
         if window == nil {
             let w = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 632),
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 596),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false
             )
@@ -101,7 +101,7 @@ final class MainWindowController: NSObject {
     }
 
     private func buildContent() -> NSView {
-        let width = 400.0, height = 632.0
+        let width = 400.0, height = 596.0
         let v = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
         let icon = NSImageView(frame: NSRect(x: width / 2 - 32, y: height - 80, width: 64, height: 64))
@@ -121,40 +121,36 @@ final class MainWindowController: NSObject {
         subtitle.frame = NSRect(x: 0, y: height - 130, width: width, height: 16)
         v.addSubview(subtitle)
 
-        overlaySwitch = switchRow(v, label: "Island in the notch", y: 456,
+        overlaySwitch = switchRow(v, label: "Island in the notch", y: 420,
                                   action: #selector(toggleOverlay(_:)))
-        soundsSwitch = switchRow(v, label: "Sounds", y: 420,
+        soundsSwitch = switchRow(v, label: "Sounds", y: 384,
                                  action: #selector(toggleSounds(_:)))
 
         let sizeLabel = NSTextField(labelWithString: "Island size")
-        sizeLabel.frame = NSRect(x: 24, y: 388, width: 120, height: 20)
+        sizeLabel.frame = NSRect(x: 24, y: 352, width: 120, height: 20)
         v.addSubview(sizeLabel)
         let slider = NSSlider(value: 1, minValue: 0.7, maxValue: 1.5,
                               target: self, action: #selector(sizeChanged(_:)))
         slider.isContinuous = true
-        slider.frame = NSRect(x: 150, y: 384, width: width - 150 - 24 - 66, height: 24)
+        slider.frame = NSRect(x: 150, y: 348, width: width - 150 - 24 - 66, height: 24)
         v.addSubview(slider)
         sizeSlider = slider
         let reset = NSButton(title: "Reset", target: self, action: #selector(resetSize(_:)))
         reset.bezelStyle = .rounded
         reset.controlSize = .small
         reset.font = .systemFont(ofSize: 11)
-        reset.frame = NSRect(x: width - 24 - 58, y: 384, width: 58, height: 22)
+        reset.frame = NSRect(x: width - 24 - 58, y: 348, width: 58, height: 22)
         v.addSubview(reset)
 
-        tokensSwitch = switchRow(v, label: "Tokens per session", y: 348,
+        tokensSwitch = switchRow(v, label: "Tokens per session", y: 312,
                                  action: #selector(toggleTokens(_:)))
-        quotaSwitch = switchRow(v, label: "Quota in the bar", y: 312,
+        quotaSwitch = switchRow(v, label: "Quota in the bar", y: 276,
                                 action: #selector(toggleQuota(_:)))
 
-        popupRow(v, label: "Quota source", y: 276,
-                 items: [("Claude", true), ("Codex (soon)", false), ("Gemini (soon)", false)],
-                 selected: ["claude", "codex", "gemini"].firstIndex(of: Display.quotaSource) ?? 0,
-                 action: #selector(quotaSourceChanged(_:)))
         popupRow(v, label: "Second line", y: 240,
-                 items: [("None", true), ("Claude week", true),
-                         ("Codex (soon)", false), ("Gemini (soon)", false)],
-                 selected: ["none", "claude", "codex", "gemini"].firstIndex(of: Display.barSecondLine) ?? 0,
+                 items: [("None", true), ("Codex", true), ("Fable 5", true),
+                         ("Gemini (soon)", false)],
+                 selected: ["none", "codex", "fable", "gemini"].firstIndex(of: Display.headerSecondLine) ?? 0,
                  action: #selector(secondLineChanged(_:)))
 
         let accounts = NSTextField(labelWithString: "ACCOUNTS")
@@ -214,13 +210,8 @@ final class MainWindowController: NSObject {
         onSizeChange?()
     }
 
-    @objc private func quotaSourceChanged(_ sender: NSPopUpButton) {
-        Display.quotaSource = ["claude", "codex", "gemini"][max(0, sender.indexOfSelectedItem)]
-        onSizeChange?()
-    }
-
     @objc private func secondLineChanged(_ sender: NSPopUpButton) {
-        Display.barSecondLine = ["none", "claude", "codex", "gemini"][max(0, sender.indexOfSelectedItem)]
+        Display.headerSecondLine = ["none", "codex", "fable", "gemini"][max(0, sender.indexOfSelectedItem)]
         onSizeChange?()
     }
 

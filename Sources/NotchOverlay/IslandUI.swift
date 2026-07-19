@@ -75,7 +75,7 @@ final class IslandController: NSObject {
 
     private let expandedWidth: CGFloat = 440
     private let rowHeight: CGFloat = 46
-    private let headerHeight: CGFloat = 26
+    private var headerHeight: CGFloat { Display.headerSecondLine == "none" ? 26 : 42 }
     private let maxVisibleRows = 8
     /// Paid: měřítko šířky islandu — roste jen do stran (křídla), výška je
     /// fixní podle notche.
@@ -323,9 +323,7 @@ final class IslandController: NSObject {
         right.attributedStringValue = rightAttributed()
         right.alignment = .right  // do rohu pillu, ne doprostřed křídla
         right.lineBreakMode = .byClipping
-        right.maximumNumberOfLines = 2
-        let rightH: CGFloat = Display.showQuotaInBar && Display.barSecondLine != "none" ? 30 : 18
-        right.frame = NSRect(x: w - rightWingWidth + notchGap, y: (h - rightH) / 2, width: rightWingWidth - notchGap - 16, height: rightH)
+        right.frame = NSRect(x: w - rightWingWidth + notchGap, y: (h - 18) / 2, width: rightWingWidth - notchGap - 16, height: 18)
         right.autoresizingMask = [.minXMargin]
         stripView.addSubview(right)
     }
@@ -348,11 +346,15 @@ final class IslandController: NSObject {
             signIn.action = #selector(signInClicked)
             listView.addSubview(signIn)
         } else {
-            let header = NSTextField(labelWithString: quotaHeaderText())
+            let twoLines = Display.headerSecondLine != "none"
+            var text = quotaHeaderText()
+            if twoLines { text += "\n" + secondLineText() }
+            let header = NSTextField(labelWithString: text)
             header.font = .monospacedSystemFont(ofSize: 10.5, weight: .medium)
             header.textColor = NSColor.white.withAlphaComponent(0.55)
             header.alignment = .center
-            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: 16)
+            header.maximumNumberOfLines = 2
+            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: twoLines ? 32 : 16)
             listView.addSubview(header)
         }
 
@@ -485,20 +487,6 @@ final class IslandController: NSObject {
             .foregroundColor: NSColor.white,
             .paragraphStyle: para,
         ]))
-        // druhá řádka: týdenní limit zvoleného provideru (zatím jen Claude)
-        if Display.barSecondLine == "claude" {
-            let wkPct = quota?.sevenDay?.pct.description ?? "?"
-            s.append(NSAttributedString(string: "\nwk ", attributes: [
-                .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.55),
-                .paragraphStyle: para,
-            ]))
-            s.append(NSAttributedString(string: "\(wkPct)%", attributes: [
-                .font: NSFont.systemFont(ofSize: 10, weight: .bold),
-                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
-                .paragraphStyle: para,
-            ]))
-        }
         return s
     }
 
@@ -522,12 +510,27 @@ final class IslandController: NSObject {
             if let r = wk.resetsAt { s += " · resets in \(remainingString(until: r))" }
             parts.append(s)
         }
-        if let fb = quota.sevenDayFable {
+        return parts.isEmpty ? "quota unavailable" : parts.joined(separator: "    ")
+    }
+
+    /// Druhá řádka hlavičky panelu podle nastavení (codex/fable/gemini).
+    private func secondLineText() -> String {
+        switch Display.headerSecondLine {
+        case "codex":
+            guard let c = CodexQuota.latest() else { return "codex: no data" }
+            var s = "codex 5h: \(c.pct)%"
+            if let r = c.resetsAt { s += " · resets in \(remainingString(until: r))" }
+            return s
+        case "fable":
+            guard let fb = quota?.sevenDayFable else { return "fable: no data" }
             var s = "fable: \(fb.pct)%"
             if let r = fb.resetsAt { s += " · resets in \(remainingString(until: r))" }
-            parts.append(s)
+            return s
+        case "gemini":
+            return "gemini: no data"
+        default:
+            return ""
         }
-        return parts.isEmpty ? "quota unavailable" : parts.joined(separator: "    ")
     }
 
     // modrá = pracuje, zelená = hotovo, oranžová = potřebuje tvou akci, červená = fail
