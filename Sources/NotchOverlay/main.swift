@@ -44,7 +44,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if case .ok(let status) = state { self?.lastQuota = status }
         }
         island.onSignInRequested = { [weak self] in
-            LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
+            LoginController.shared.onSuccess = {
+                UserDefaults.standard.removeObject(forKey: "claudeSignedOut")
+                self?.quota.credentialsChanged()
+            }
             LoginController.shared.present()
         }
 
@@ -56,8 +59,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             UserDefaults.standard.set(!on, forKey: "overlayHidden")
         }
         MainWindowController.shared.onSignIn = { [weak self] in
-            LoginController.shared.onSuccess = { self?.quota.credentialsChanged() }
+            LoginController.shared.onSuccess = {
+                UserDefaults.standard.removeObject(forKey: "claudeSignedOut")
+                self?.quota.credentialsChanged()
+            }
             LoginController.shared.present()
+        }
+        MainWindowController.shared.onSignOutClaude = { [weak self] in
+            Providers.signOutClaude()
+            self?.quota.credentialsChanged()
         }
         MainWindowController.shared.onSizeChange = { [weak self] in
             self?.island.sizeChanged()

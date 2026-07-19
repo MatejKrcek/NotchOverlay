@@ -81,7 +81,7 @@ final class IslandController: NSObject {
     /// fixní podle notche.
     private var sizeScale: CGFloat {
         let v = UserDefaults.standard.double(forKey: "islandScale")
-        return v == 0 ? 1 : CGFloat(min(max(v, 1.0), 1.5))
+        return v == 0 ? 1 : CGFloat(min(max(v, 0.7), 1.5))
     }
 
     /// Křídla v liště vedle notche — jen tak široká, jak potřebuje obsah,
@@ -323,7 +323,9 @@ final class IslandController: NSObject {
         right.attributedStringValue = rightAttributed()
         right.alignment = .right  // do rohu pillu, ne doprostřed křídla
         right.lineBreakMode = .byClipping
-        right.frame = NSRect(x: w - rightWingWidth + notchGap, y: (h - 18) / 2, width: rightWingWidth - notchGap - 16, height: 18)
+        right.maximumNumberOfLines = 2
+        let rightH: CGFloat = Display.showQuotaInBar && Display.barSecondLine != "none" ? 30 : 18
+        right.frame = NSRect(x: w - rightWingWidth + notchGap, y: (h - rightH) / 2, width: rightWingWidth - notchGap - 16, height: rightH)
         right.autoresizingMask = [.minXMargin]
         stripView.addSubview(right)
     }
@@ -483,6 +485,20 @@ final class IslandController: NSObject {
             .foregroundColor: NSColor.white,
             .paragraphStyle: para,
         ]))
+        // druhá řádka: týdenní limit zvoleného provideru (zatím jen Claude)
+        if Display.barSecondLine == "claude" {
+            let wkPct = quota?.sevenDay?.pct.description ?? "?"
+            s.append(NSAttributedString(string: "\nwk ", attributes: [
+                .font: NSFont.systemFont(ofSize: 8, weight: .semibold),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.55),
+                .paragraphStyle: para,
+            ]))
+            s.append(NSAttributedString(string: "\(wkPct)%", attributes: [
+                .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+                .foregroundColor: NSColor.white.withAlphaComponent(0.9),
+                .paragraphStyle: para,
+            ]))
+        }
         return s
     }
 
@@ -560,22 +576,8 @@ final class IslandController: NSObject {
         Jump.answerPermission(termProgram: session.termProgram, allow: allow)
     }
 
+    /// Pravý klik na island → rovnou settings okno appky.
     func showMenu(at event: NSEvent, in view: NSView) {
-        let menu = NSMenu()
-        let sounds = NSMenuItem(title: "Sounds", action: #selector(toggleSounds), keyEquivalent: "")
-        sounds.target = self
-        sounds.state = Sounds.shared.enabled ? .on : .off
-        menu.addItem(sounds)
-        let login = NSMenuItem(title: "Sign in with Claude…", action: #selector(signInClicked), keyEquivalent: "")
-        login.target = self
-        menu.addItem(login)
-        menu.addItem(.separator())
-        let quit = NSMenuItem(title: "Quit NotchOverlay", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        NSMenu.popUpContextMenu(menu, with: event, for: view)
+        MainWindowController.shared.present()
     }
-
-    @objc private func toggleSounds() { Sounds.shared.enabled.toggle() }
-    @objc private func quit() { NSApp.terminate(nil) }
 }

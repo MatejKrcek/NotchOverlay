@@ -135,6 +135,8 @@ final class QuotaFetcher {
     // MARK: - Tokeny
 
     private func currentToken() -> String? {
+        // Uživatel se explicitně odhlásil — nepoužívat ani fallback credentials.
+        guard !UserDefaults.standard.bool(forKey: "claudeSignedOut") else { return nil }
         if let t = cachedToken, let e = cachedExpiry, e.timeIntervalSinceNow > 60 { return t }
         guard let creds = readCredentials() else { return nil }
         if let exp = creds.expiresAt, exp.timeIntervalSinceNow > 60 {

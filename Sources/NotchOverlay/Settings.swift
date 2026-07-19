@@ -11,6 +11,17 @@ enum Display {
         get { !UserDefaults.standard.bool(forKey: "hideQuotaBar") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideQuotaBar") }
     }
+    /// Čí limit ukazuje hlavní řádka v liště ("claude"; codex/gemini zatím
+    /// nemají odkud limity číst — volby jsou v UI, ale neaktivní).
+    static var quotaSource: String {
+        get { UserDefaults.standard.string(forKey: "quotaSource") ?? "claude" }
+        set { UserDefaults.standard.set(newValue, forKey: "quotaSource") }
+    }
+    /// Druhá řádka pod „5h X%": "none" / "claude" (týdenní limit).
+    static var barSecondLine: String {
+        get { UserDefaults.standard.string(forKey: "barSecondLine") ?? "none" }
+        set { UserDefaults.standard.set(newValue, forKey: "barSecondLine") }
+    }
 }
 
 /// Paid: účty CLI agentů. Přihlášení deleguje na CLI (codex login, gemini) —
@@ -54,6 +65,31 @@ enum Providers {
             signedIn: exists("~/.gemini/oauth_creds.json"),
             loginCommand: "gemini"
         )
+    }
+
+    /// Codex logout = smazání auth.json (totéž co `codex logout`).
+    static func signOutCodex() {
+        try? FileManager.default.removeItem(
+            atPath: NSString(string: "~/.codex/auth.json").expandingTildeInPath)
+    }
+
+    /// Gemini logout = smazání oauth credentials.
+    static func signOutGemini() {
+        for f in ["~/.gemini/oauth_creds.json", "~/.gemini/google_accounts.json"] {
+            try? FileManager.default.removeItem(atPath: NSString(string: f).expandingTildeInPath)
+        }
+    }
+
+    /// Claude sign out: smaže vlastní credentials appky a nastaví flag,
+    /// aby se nepoužil fallback na credentials Claude Code (ty nemažeme).
+    static func signOutClaude() {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        p.arguments = ["delete-generic-password", "-s", "NotchOverlay-credentials"]
+        p.standardOutput = Pipe(); p.standardError = Pipe()
+        try? p.run()
+        p.waitUntilExit()
+        UserDefaults.standard.set(true, forKey: "claudeSignedOut")
     }
 
     /// Otevře Terminál s login příkazem CLI (vyžaduje Automation oprávnění).

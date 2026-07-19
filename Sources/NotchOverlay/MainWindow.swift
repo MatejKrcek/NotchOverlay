@@ -9,6 +9,7 @@ final class MainWindowController: NSObject {
     var isOverlayOn: (() -> Bool)?
     var setOverlayOn: ((Bool) -> Void)?
     var onSignIn: (() -> Void)?
+    var onSignOutClaude: (() -> Void)?
     var onSizeChange: (() -> Void)?
     /// Stav přihlášení ke Claude ("signed in" / "not signed in" / "checking…").
     var claudeStatus: (() -> String)?
@@ -23,7 +24,7 @@ final class MainWindowController: NSObject {
     func present() {
         if window == nil {
             let w = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 560),
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 632),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false
             )
@@ -79,8 +80,28 @@ final class MainWindowController: NSObject {
         }
     }
 
+    /// Řádek s popup výběrem; disabled položky zůstávají viditelné („soon").
+    private func popupRow(_ v: NSView, label: String, y: CGFloat,
+                          items: [(title: String, enabled: Bool)],
+                          selected: Int, action: Selector) {
+        let width = v.frame.width
+        let l = NSTextField(labelWithString: label)
+        l.frame = NSRect(x: 24, y: y + 4, width: 160, height: 20)
+        v.addSubview(l)
+        let popup = NSPopUpButton(frame: NSRect(x: width - 24 - 150, y: y, width: 150, height: 26))
+        for item in items {
+            popup.addItem(withTitle: item.title)
+            popup.lastItem?.isEnabled = item.enabled
+        }
+        popup.autoenablesItems = false
+        popup.selectItem(at: selected)
+        popup.target = self
+        popup.action = action
+        v.addSubview(popup)
+    }
+
     private func buildContent() -> NSView {
-        let width = 400.0, height = 560.0
+        let width = 400.0, height = 632.0
         let v = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
 
         let icon = NSImageView(frame: NSRect(x: width / 2 - 32, y: height - 80, width: 64, height: 64))
@@ -100,31 +121,41 @@ final class MainWindowController: NSObject {
         subtitle.frame = NSRect(x: 0, y: height - 130, width: width, height: 16)
         v.addSubview(subtitle)
 
-        overlaySwitch = switchRow(v, label: "Island in the notch", y: 384,
+        overlaySwitch = switchRow(v, label: "Island in the notch", y: 456,
                                   action: #selector(toggleOverlay(_:)))
-        soundsSwitch = switchRow(v, label: "Sounds", y: 348,
+        soundsSwitch = switchRow(v, label: "Sounds", y: 420,
                                  action: #selector(toggleSounds(_:)))
 
         let sizeLabel = NSTextField(labelWithString: "Island size")
-        sizeLabel.frame = NSRect(x: 24, y: 316, width: 120, height: 20)
+        sizeLabel.frame = NSRect(x: 24, y: 388, width: 120, height: 20)
         v.addSubview(sizeLabel)
-        let slider = NSSlider(value: 1, minValue: 1, maxValue: 1.5,
+        let slider = NSSlider(value: 1, minValue: 0.7, maxValue: 1.5,
                               target: self, action: #selector(sizeChanged(_:)))
         slider.isContinuous = true
-        slider.frame = NSRect(x: 150, y: 312, width: width - 150 - 24 - 66, height: 24)
+        slider.frame = NSRect(x: 150, y: 384, width: width - 150 - 24 - 66, height: 24)
         v.addSubview(slider)
         sizeSlider = slider
         let reset = NSButton(title: "Reset", target: self, action: #selector(resetSize(_:)))
         reset.bezelStyle = .rounded
         reset.controlSize = .small
         reset.font = .systemFont(ofSize: 11)
-        reset.frame = NSRect(x: width - 24 - 58, y: 312, width: 58, height: 22)
+        reset.frame = NSRect(x: width - 24 - 58, y: 384, width: 58, height: 22)
         v.addSubview(reset)
 
-        tokensSwitch = switchRow(v, label: "Tokens per session", y: 276,
+        tokensSwitch = switchRow(v, label: "Tokens per session", y: 348,
                                  action: #selector(toggleTokens(_:)))
-        quotaSwitch = switchRow(v, label: "Quota in the bar", y: 240,
+        quotaSwitch = switchRow(v, label: "Quota in the bar", y: 312,
                                 action: #selector(toggleQuota(_:)))
+
+        popupRow(v, label: "Quota source", y: 276,
+                 items: [("Claude", true), ("Codex (soon)", false), ("Gemini (soon)", false)],
+                 selected: ["claude", "codex", "gemini"].firstIndex(of: Display.quotaSource) ?? 0,
+                 action: #selector(quotaSourceChanged(_:)))
+        popupRow(v, label: "Second line", y: 240,
+                 items: [("None", true), ("Claude week", true),
+                         ("Codex (soon)", false), ("Gemini (soon)", false)],
+                 selected: ["none", "claude", "codex", "gemini"].firstIndex(of: Display.barSecondLine) ?? 0,
+                 action: #selector(secondLineChanged(_:)))
 
         let accounts = NSTextField(labelWithString: "ACCOUNTS")
         accounts.font = .systemFont(ofSize: 10, weight: .semibold)
@@ -132,16 +163,21 @@ final class MainWindowController: NSObject {
         accounts.frame = NSRect(x: 24, y: 202, width: 200, height: 14)
         v.addSubview(accounts)
 
-        accountRow(v, name: "Claude", status: claudeStatus?() ?? "checking…",
-                   y: 170, buttonTitle: "Sign in…", action: #selector(signIn(_:)))
+        let claudeSt = claudeStatus?() ?? "checking…"
+        accountRow(v, name: "Claude", status: claudeSt, y: 170,
+                   buttonTitle: claudeSt == "signed in" ? "Sign out" : "Sign in…",
+                   action: claudeSt == "signed in" ? #selector(signOutClaude(_:))
+                                                   : #selector(signIn(_:)))
         let codex = Providers.codex()
         accountRow(v, name: "Codex CLI", status: codex.label, y: 140,
-                   buttonTitle: codex.installed ? "Sign in…" : nil,
-                   action: codex.installed ? #selector(signInCodex(_:)) : nil)
+                   buttonTitle: !codex.installed ? nil : (codex.signedIn ? "Sign out" : "Sign in…"),
+                   action: !codex.installed ? nil
+                         : (codex.signedIn ? #selector(signOutCodex(_:)) : #selector(signInCodex(_:))))
         let gemini = Providers.gemini()
         accountRow(v, name: "Gemini CLI", status: gemini.label, y: 110,
-                   buttonTitle: gemini.installed ? "Sign in…" : nil,
-                   action: gemini.installed ? #selector(signInGemini(_:)) : nil)
+                   buttonTitle: !gemini.installed ? nil : (gemini.signedIn ? "Sign out" : "Sign in…"),
+                   action: !gemini.installed ? nil
+                         : (gemini.signedIn ? #selector(signOutGemini(_:)) : #selector(signInGemini(_:))))
 
         let quit = NSButton(title: "Quit NotchOverlay", target: self, action: #selector(quit(_:)))
         quit.bezelStyle = .rounded
@@ -178,6 +214,16 @@ final class MainWindowController: NSObject {
         onSizeChange?()
     }
 
+    @objc private func quotaSourceChanged(_ sender: NSPopUpButton) {
+        Display.quotaSource = ["claude", "codex", "gemini"][max(0, sender.indexOfSelectedItem)]
+        onSizeChange?()
+    }
+
+    @objc private func secondLineChanged(_ sender: NSPopUpButton) {
+        Display.barSecondLine = ["none", "claude", "codex", "gemini"][max(0, sender.indexOfSelectedItem)]
+        onSizeChange?()
+    }
+
     @objc private func sizeChanged(_ sender: NSSlider) {
         UserDefaults.standard.set(sender.doubleValue, forKey: "islandScale")
         onSizeChange?()
@@ -199,6 +245,33 @@ final class MainWindowController: NSObject {
 
     @objc private func signInGemini(_ sender: NSButton) {
         if let cmd = Providers.gemini().loginCommand { Providers.openLogin(command: cmd) }
+    }
+
+    @objc private func signOutClaude(_ sender: NSButton) {
+        onSignOutClaude?()
+        refresh()
+    }
+
+    @objc private func signOutCodex(_ sender: NSButton) {
+        Providers.signOutCodex()
+        refresh()
+    }
+
+    @objc private func signOutGemini(_ sender: NSButton) {
+        Providers.signOutGemini()
+        refresh()
+    }
+
+    /// Překreslí obsah okna (stavy účtů) bez přecentrování.
+    private func refresh() {
+        guard let window, window.isVisible else { return }
+        window.contentView = buildContent()
+        overlaySwitch?.state = (isOverlayOn?() ?? true) ? .on : .off
+        soundsSwitch?.state = Sounds.shared.enabled ? .on : .off
+        let scale = UserDefaults.standard.double(forKey: "islandScale")
+        sizeSlider?.doubleValue = scale == 0 ? 1 : scale
+        tokensSwitch?.state = Display.showSessionTokens ? .on : .off
+        quotaSwitch?.state = Display.showQuotaInBar ? .on : .off
     }
 
     @objc private func quit(_ sender: NSButton) {
