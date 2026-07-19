@@ -2,12 +2,18 @@ import Foundation
 
 /// Paid: limity Codexu čtené lokálně z rollout souborů ~/.codex/sessions —
 /// token_count eventy nesou rate_limits.primary (used_percent, resets_at).
+/// Plány bez oken (business/kredity) mají primary null — pak aspoň plan_type.
 /// Žádné API; jen tail nejnovějšího souboru, cache 60 s.
 enum CodexQuota {
-    private static var cached: (pct: Int, resetsAt: Date?)??
+    enum Info {
+        case window(pct: Int, resetsAt: Date?)
+        case planOnly(String)   // plán bez limit oken, např. "business"
+    }
+
+    private static var cached: Info??
     private static var cachedAt = Date.distantPast
 
-    static func latest() -> (pct: Int, resetsAt: Date?)? {
+    static func latest() -> Info? {
         if Date().timeIntervalSince(cachedAt) < 60, let c = cached { return c }
         let value = read()
         cached = value
@@ -15,7 +21,7 @@ enum CodexQuota {
         return value
     }
 
-    private static func read() -> (pct: Int, resetsAt: Date?)? {
+    private static func read() -> Info? {
         let root = NSString(string: "~/.codex/sessions").expandingTildeInPath
         let fm = FileManager.default
         guard let en = fm.enumerator(atPath: root) else { return nil }
@@ -34,18 +40,31 @@ enum CodexQuota {
         guard let data = try? fh.readToEnd(),
               let text = String(data: data, encoding: .utf8) else { return nil }
 
-        for line in text.split(separator: "\n").reversed() where line.contains("used_percent") {
+        var planType: String?
+        for line in text.split(separator: "\n").reversed() where line.contains("\"rate_limits\"") {
             guard let d = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any],
-                  let primary = findPrimary(in: obj),
-                  let used = (primary["used_percent"] as? Double)
-                          ?? (primary["used_percent"] as? Int).map(Double.init)
+                  let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any]
             else { continue }
-            var resets: Date?
-            if let t = (primary["resets_at"] as? Double) ?? (primary["resets_at"] as? Int).map(Double.init) {
-                resets = Date(timeIntervalSince1970: t)
+            if let primary = findPrimary(in: obj),
+               let used = (primary["used_percent"] as? Double)
+                       ?? (primary["used_percent"] as? Int).map(Double.init) {
+                var resets: Date?
+                if let t = (primary["resets_at"] as? Double) ?? (primary["resets_at"] as? Int).map(Double.init) {
+                    resets = Date(timeIntervalSince1970: t)
+                }
+                return .window(pct: max(0, min(100, Int(used.rounded()))), resetsAt: resets)
             }
-            return (max(0, min(100, Int(used.rounded()))), resets)
+            if planType == nil, let p = findValue(forKey: "plan_type", in: obj) as? String {
+                planType = p
+            }
+        }
+        return planType.map { .planOnly($0) }
+    }
+
+    private static func findValue(forKey key: String, in obj: [String: Any]) -> Any? {
+        if let v = obj[key] { return v }
+        for v in obj.values {
+            if let sub = v as? [String: Any], let found = findValue(forKey: key, in: sub) { return found }
         }
         return nil
     }

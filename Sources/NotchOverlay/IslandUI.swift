@@ -517,10 +517,16 @@ final class IslandController: NSObject {
     private func secondLineText() -> String {
         switch Display.headerSecondLine {
         case "codex":
-            guard let c = CodexQuota.latest() else { return "codex: no data" }
-            var s = "codex 5h: \(c.pct)%"
-            if let r = c.resetsAt { s += " · resets in \(remainingString(until: r))" }
-            return s
+            switch CodexQuota.latest() {
+            case .window(let pct, let resets):
+                var s = "codex 5h: \(pct)%"
+                if let r = resets { s += " · resets in \(remainingString(until: r))" }
+                return s
+            case .planOnly(let plan):
+                return "codex: \(plan) plan · no limit windows"
+            case nil:
+                return "codex: no data"
+            }
         case "fable":
             guard let fb = quota?.sevenDayFable else { return "fable: no data" }
             var s = "fable: \(fb.pct)%"

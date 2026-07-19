@@ -107,12 +107,33 @@ final class QuotaFetcher {
             q.sevenDay = Self.window(in: obj, keys: ["seven_day", "7d", "week", "weekly"])
             q.sevenDayOpus = Self.window(in: obj, keys: ["seven_day_opus", "seven_day_sonnet"])
             q.sevenDayFable = Self.window(in: obj, keys: ["seven_day_fable", "seven_day_mythos", "fable_weekly", "fable"])
+                ?? Self.scopedLimit(in: obj, modelName: "fable")
             if q.fiveHour != nil || q.sevenDay != nil { result = q }
             else { self.debug("v odpovědi nejsou známá okna; dump: \(String(data: data, encoding: .utf8)?.prefix(500) ?? "")") }
         }.resume()
         sem.wait()
         // Jen úspěch přepisuje data — po přechodné chybě si UI drží poslední hodnotu.
         if let result { push(.ok(result)) }
+    }
+
+    /// Model-scoped limit z pole `limits` (weekly_scoped se scope.model
+    /// .display_name == modelName) — takhle API vrací limit Fable 5.
+    private static func scopedLimit(in obj: [String: Any], modelName: String) -> QuotaWindow? {
+        guard let limits = obj["limits"] as? [[String: Any]] else { return nil }
+        for l in limits {
+            guard let scope = l["scope"] as? [String: Any],
+                  let model = scope["model"] as? [String: Any],
+                  let name = model["display_name"] as? String,
+                  name.lowercased().contains(modelName.lowercased())
+            else { continue }
+            guard let raw = (l["percent"] as? Double) ?? (l["percent"] as? Int).map(Double.init)
+            else { continue }
+            let pct = max(0, min(100, Int(raw.rounded())))
+            var resets: Date?
+            if let s = l["resets_at"] as? String { resets = parseISO(s) }
+            return QuotaWindow(pct: pct, resetsAt: resets)
+        }
+        return nil
     }
 
     /// Najde okno kvóty pod některým z klíčů a vytáhne utilization (0–100) + reset.
