@@ -4,9 +4,29 @@
 
 ![Expandovaný panel se sessions](docs/expanded.png)
 
-## Instalace (nativní appka na pozadí)
+## Instalace
 
-Jedním příkazem (stačí Xcode Command Line Tools):
+### Homebrew (doporučeno)
+
+```sh
+brew tap matejkrcek/notchoverlay
+brew trust matejkrcek/notchoverlay   # novější Homebrew vyžaduje důvěru cizím tapům
+brew install --cask notchoverlay
+```
+
+Quarantine flag se smaže automaticky (postflight), není potřeba nic povolovat.
+
+### DMG
+
+Stáhni `NotchOverlay.dmg` z [Releases](https://github.com/MatejKrcek/NotchOverlay/releases)
+a přetáhni appku do Applications. Appka je ad-hoc podepsaná, takže ji
+Gatekeeper po stažení zablokuje („nelze ověřit vývojáře"). Povolení:
+
+- pravý klik na appku → **Open** → potvrdit **Open** (starší macOS:
+  System Settings → Privacy & Security → **Open Anyway**), nebo
+- v terminálu: `xattr -cr /Applications/NotchOverlay.app`
+
+### Ze zdrojáků (stačí Xcode Command Line Tools)
 
 ```sh
 curl -fsSL https://raw.githubusercontent.com/MatejKrcek/NotchOverlay/main/install.sh | bash
