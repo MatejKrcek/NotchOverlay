@@ -12,13 +12,6 @@ final class UsageStats {
 
     private let projectsDir = NSString(string: "~/.claude/projects").expandingTildeInPath
 
-    // Hrubý odhad ceny za 1M tokenů (input, output, cache read)
-    private func pricing(for model: String) -> (inp: Double, out: Double, cache: Double) {
-        if model.contains("haiku") { return (0.8, 4, 0.08) }
-        if model.contains("sonnet") { return (3, 15, 0.3) }
-        return (15, 75, 1.5)  // opus / fable
-    }
-
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 1, repeating: 60)
@@ -89,14 +82,12 @@ final class UsageStats {
                   let date = parseISO(ts)
             else { continue }
             let model = (msg["model"] as? String) ?? ""
-            let p = pricing(for: model)
-            let inp = (usage["input_tokens"] as? Int ?? 0)
-                    + (usage["cache_creation_input_tokens"] as? Int ?? 0)
+            let input = usage["input_tokens"] as? Int ?? 0
+            let cacheCreation = usage["cache_creation_input_tokens"] as? Int ?? 0
             let out = usage["output_tokens"] as? Int ?? 0
             let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
-            let cost = Double(inp) / 1e6 * p.inp
-                     + Double(out) / 1e6 * p.out
-                     + Double(cacheRead) / 1e6 * p.cache
+            let cost = Pricing.cost(input: input, cacheCreation: cacheCreation,
+                                    output: out, cacheRead: cacheRead, model: model)
             events.append((date, out, cost, path))
         }
         offsets[path] = consumed

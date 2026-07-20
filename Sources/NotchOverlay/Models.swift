@@ -46,6 +46,51 @@ struct UsageSummary: Equatable {
     var perSessionOutput: [String: Int] = [:]
 }
 
+/// Sdílený odhad cen — jeden zdroj pravdy pro UsageStats i SpendStats.
+enum Pricing {
+    /// Hrubý odhad ceny za 1M tokenů (input, output, cache read).
+    static func rates(for model: String) -> (inp: Double, out: Double, cache: Double) {
+        if model.contains("haiku") { return (0.8, 4, 0.08) }
+        if model.contains("sonnet") { return (3, 15, 0.3) }
+        return (15, 75, 1.5)  // opus / fable
+    }
+
+    /// Odhad ceny v USD z rozpadu tokenů. input+cache_creation účtováno vstupní
+    /// sazbou, output výstupní, cache_read cache sazbou.
+    static func cost(input: Int, cacheCreation: Int, output: Int,
+                     cacheRead: Int, model: String) -> Double {
+        let p = rates(for: model)
+        return Double(input + cacheCreation) / 1e6 * p.inp
+             + Double(output) / 1e6 * p.out
+             + Double(cacheRead) / 1e6 * p.cache
+    }
+}
+
+/// Jedno spend okno: součet tokenů (in+cache_creation+out+cache_read) a odhad ceny.
+struct SpendWindow: Equatable {
+    var tokens: Int = 0
+    var costUSD: Double = 0
+
+    mutating func add(tokens t: Int, cost c: Double) {
+        tokens += t
+        costUSD += c
+    }
+}
+
+/// Přehled spendu za čtyři okna. `computedAt == nil` = ještě nespočítáno.
+struct SpendSummary: Equatable {
+    var last24h = SpendWindow()
+    var last7d = SpendWindow()
+    var last31d = SpendWindow()
+    var thisYear = SpendWindow()
+    var computedAt: Date? = nil
+}
+
+/// Odhad ceny formátovaný do USD („$8.40", nad $100 bez centů).
+func shortUSD(_ v: Double) -> String {
+    v >= 100 ? String(format: "$%.0f", v) : String(format: "$%.2f", v)
+}
+
 func shortModelName(_ model: String) -> String {
     if model.contains("fable") { return "fable" }
     if model.contains("opus") { return "opus" }
