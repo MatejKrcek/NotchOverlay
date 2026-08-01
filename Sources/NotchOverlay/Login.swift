@@ -21,6 +21,10 @@ final class LoginController: NSObject {
 
     func present() {
         if window == nil { buildWindow() }
+        // PKCE parametry se generují jen tady — „Open browser again" musí použít
+        // stejný verifier, jinak kód z dříve otevřené autorizace nejde vyměnit.
+        verifier = Self.base64url(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
+        stateParam = Self.base64url(SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) })
         startAuth()
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
@@ -30,8 +34,6 @@ final class LoginController: NSObject {
     // MARK: - OAuth
 
     private func startAuth() {
-        verifier = Self.base64url(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
-        stateParam = Self.base64url(SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) })
         let challenge = Self.base64url(Data(SHA256.hash(data: Data(verifier.utf8))))
 
         var c = URLComponents(string: "https://claude.ai/oauth/authorize")!
@@ -63,22 +65,24 @@ final class LoginController: NSObject {
         setStatus("Exchanging code…", error: false)
 
         DispatchQueue.global().async {
-            let ok = self.exchange(code: code, state: state)
+            let failure = self.exchange(code: code, state: state)
             DispatchQueue.main.async {
-                if ok {
+                if let failure {
+                    self.setStatus("Login failed — \(failure)", error: true)
+                } else {
                     self.setStatus("Signed in ✓", error: false)
                     self.onSuccess?()
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
                         self.window?.orderOut(nil)
                     }
-                } else {
-                    self.setStatus("Login failed — try again (see ~/.claude/vibe-quota-debug.txt).", error: true)
                 }
             }
         }
     }
 
-    private func exchange(code: String, state: String) -> Bool {
+    /// Vymění kód za tokeny a uloží je do Keychain. Vrací nil při úspěchu,
+    /// jinak krátkou hlášku pro UI; detail jde do ~/.claude/vibe-quota-debug.txt.
+    private func exchange(code: String, state: String) -> String? {
         var req = URLRequest(url: URL(string: "https://console.anthropic.com/v1/oauth/token")!)
         req.httpMethod = "POST"
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -93,13 +97,30 @@ final class LoginController: NSObject {
         req.timeoutInterval = 20
 
         let sem = DispatchSemaphore(value: 0)
-        var success = false
-        URLSession.shared.dataTask(with: req) { data, resp, _ in
+        var failure: String? = "no response from server"
+        URLSession.shared.dataTask(with: req) { data, resp, err in
             defer { sem.signal() }
-            guard let http = resp as? HTTPURLResponse, http.statusCode == 200, let data,
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            if let err {
+                Self.log("token exchange network: \(err.localizedDescription)")
+                failure = err.localizedDescription
+                return
+            }
+            guard let http = resp as? HTTPURLResponse, let data else { return }
+            let body = String(data: data, encoding: .utf8) ?? ""
+            guard http.statusCode == 200 else {
+                Self.log("token exchange http \(http.statusCode): \(body.prefix(300))")
+                failure = http.statusCode == 429
+                    ? "rate limited (429), wait a few minutes and try again"
+                    : "HTTP \(http.statusCode) — open browser again for a fresh code"
+                return
+            }
+            guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
                   let access = obj["access_token"] as? String
-            else { return }
+            else {
+                Self.log("token exchange: unexpected 200 body: \(body.prefix(300))")
+                failure = "unexpected server response"
+                return
+            }
             let expiresIn = (obj["expires_in"] as? Double) ?? 3600
             let creds: [String: Any] = ["claudeAiOauth": [
                 "accessToken": access,
@@ -107,17 +128,46 @@ final class LoginController: NSObject {
                 "expiresAt": (Date().timeIntervalSince1970 + expiresIn) * 1000,
             ]]
             guard let json = try? JSONSerialization.data(withJSONObject: creds),
-                  let jsonStr = String(data: json, encoding: .utf8) else { return }
+                  let jsonStr = String(data: json, encoding: .utf8)
+            else {
+                failure = "could not serialize credentials"
+                return
+            }
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
             p.arguments = ["add-generic-password", "-U", "-a", "notch",
                            "-s", "NotchOverlay-credentials", "-w", jsonStr]
-            try? p.run()
+            p.standardOutput = Pipe(); p.standardError = Pipe()
+            do { try p.run() } catch {
+                Self.log("keychain: security nejde spustit: \(error.localizedDescription)")
+                failure = "could not write to Keychain"
+                return
+            }
             p.waitUntilExit()
-            success = p.terminationStatus == 0
+            if p.terminationStatus == 0 {
+                Self.log("login ok — credentials saved to Keychain")
+                failure = nil
+            } else {
+                Self.log("keychain add-generic-password exit \(p.terminationStatus)")
+                failure = "Keychain write failed (\(p.terminationStatus))"
+            }
         }.resume()
         sem.wait()
-        return success
+        return failure
+    }
+
+    /// Stejný debug soubor jako QuotaFetcher — login chyby ať jsou vidět tam,
+    /// kam UI hláška odkazuje.
+    private static func log(_ msg: String) {
+        let path = NSString(string: "~/.claude/vibe-quota-debug.txt").expandingTildeInPath
+        let line = "\(Date()) login: \(msg)\n"
+        if let fh = FileHandle(forWritingAtPath: path) {
+            fh.seekToEndOfFile()
+            fh.write(line.data(using: .utf8)!)
+            try? fh.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
+        }
     }
 
     private static func base64url(_ data: Data) -> String {
