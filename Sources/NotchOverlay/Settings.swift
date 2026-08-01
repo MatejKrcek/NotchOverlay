@@ -17,6 +17,21 @@ enum Display {
         get { UserDefaults.standard.string(forKey: "headerSecondLine") ?? "none" }
         set { UserDefaults.standard.set(newValue, forKey: "headerSecondLine") }
     }
+    /// 5h session v pravé části menu baru:
+    /// "off" / "pct" (využití, např. „5h 16%") / "reset" (čas resetu, např. „17:30").
+    static var menuBarFiveHour: String {
+        get {
+            let v = UserDefaults.standard.string(forKey: "menuBarFiveHour") ?? "off"
+            return v == "left" ? "pct" : v  // dřívější mód „zbývající čas" nahradila procenta
+        }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarFiveHour") }
+    }
+    /// Poslední zvolený styl hodnoty ("pct"/"reset") — přežije vypnutí položky,
+    /// aby zapnutí přepínačem vrátilo, co uživatel měl.
+    static var menuBarFiveHourStyle: String {
+        get { UserDefaults.standard.string(forKey: "menuBarFiveHourStyle") ?? "pct" }
+        set { UserDefaults.standard.set(newValue, forKey: "menuBarFiveHourStyle") }
+    }
 }
 
 /// Paid: účty CLI agentů. Přihlášení deleguje na CLI (codex login, gemini) —

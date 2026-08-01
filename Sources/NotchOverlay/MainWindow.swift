@@ -20,6 +20,7 @@ final class MainWindowController: NSObject {
     private var sizeSlider: NSSlider?
     private var tokensSwitch: NSSwitch?
     private var quotaSwitch: NSSwitch?
+    private var menuBarSwitch: NSSwitch?
     private var spend24: NSTextField?
     private var spend7: NSTextField?
     private var spend31: NSTextField?
@@ -30,7 +31,7 @@ final class MainWindowController: NSObject {
     func present() {
         if window == nil {
             let w = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 756),
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 826),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false
             )
@@ -46,6 +47,7 @@ final class MainWindowController: NSObject {
         sizeSlider?.doubleValue = scale == 0 ? 1 : scale
         tokensSwitch?.state = Display.showSessionTokens ? .on : .off
         quotaSwitch?.state = Display.showQuotaInBar ? .on : .off
+        menuBarSwitch?.state = Display.menuBarFiveHour != "off" ? .on : .off
         window?.center()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -125,7 +127,7 @@ final class MainWindowController: NSObject {
     }
 
     private func buildContent() -> NSView {
-        let width = 400.0, height = 756.0
+        let width = 400.0, height = 826.0
         let v = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         // Kurzor: horní hrana dalšího prvku, klesá dolů. Žádné magic-numbers.
         var y = height - 16
@@ -189,6 +191,15 @@ final class MainWindowController: NSObject {
                          ("Gemini (soon)", false)],
                  selected: ["none", "codex", "fable", "gemini"].firstIndex(of: Display.headerSecondLine) ?? 0,
                  action: #selector(secondLineChanged(_:)))
+        y -= 34
+
+        menuBarSwitch = switchRow(v, label: "5h session in menu bar", y: y,
+                                  action: #selector(toggleMenuBar(_:)))
+        y -= 36
+        popupRow(v, label: "Menu bar style", y: y,
+                 items: [("Usage %", true), ("Reset time", true)],
+                 selected: ["pct", "reset"].firstIndex(of: Display.menuBarFiveHourStyle) ?? 0,
+                 action: #selector(menuBarStyleChanged(_:)))
         y -= 34
 
         // SPEND
@@ -300,6 +311,20 @@ final class MainWindowController: NSObject {
         onSizeChange?()
     }
 
+    @objc private func toggleMenuBar(_ sender: NSSwitch) {
+        Display.menuBarFiveHour = sender.state == .on ? Display.menuBarFiveHourStyle : "off"
+        MenuBarController.shared.applyMode()
+    }
+
+    /// Výběr stylu položku rovnou zapne — vybírat styl vypnuté položky nedává smysl.
+    @objc private func menuBarStyleChanged(_ sender: NSPopUpButton) {
+        let style = ["pct", "reset"][max(0, sender.indexOfSelectedItem)]
+        Display.menuBarFiveHourStyle = style
+        Display.menuBarFiveHour = style
+        menuBarSwitch?.state = .on
+        MenuBarController.shared.applyMode()
+    }
+
     @objc private func sizeChanged(_ sender: NSSlider) {
         UserDefaults.standard.set(sender.doubleValue, forKey: "islandScale")
         onSizeChange?()
@@ -348,6 +373,7 @@ final class MainWindowController: NSObject {
         sizeSlider?.doubleValue = scale == 0 ? 1 : scale
         tokensSwitch?.state = Display.showSessionTokens ? .on : .off
         quotaSwitch?.state = Display.showQuotaInBar ? .on : .off
+        menuBarSwitch?.state = Display.menuBarFiveHour != "off" ? .on : .off
         loadSpend()
     }
 

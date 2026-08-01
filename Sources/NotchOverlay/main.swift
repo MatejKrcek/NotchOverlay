@@ -13,6 +13,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
 
         island.setUp()
+        MenuBarController.shared.start()
 
         monitor.onUpdate = { [weak self] sessions in
             self?.island.update(sessions: sessions)
@@ -40,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         quota.onState = { [weak self] state in
             self?.island.update(quotaState: state)
+            MenuBarController.shared.update(quotaState: state)
             self?.quotaFetchState = state
             if case .ok(let status) = state { self?.lastQuota = status }
         }
