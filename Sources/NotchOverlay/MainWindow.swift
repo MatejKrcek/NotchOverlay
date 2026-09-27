@@ -18,7 +18,7 @@ final class MainWindowController: NSObject {
     private var overlaySwitch: NSSwitch?
     private var soundsSwitch: NSSwitch?
     private var sizeSlider: NSSlider?
-    private var tokensSwitch: NSSwitch?
+    private var panelSlider: NSSlider?
     private var quotaSwitch: NSSwitch?
     private var menuBarSwitch: NSSwitch?
     private var spend24: NSTextField?
@@ -31,7 +31,7 @@ final class MainWindowController: NSObject {
     func present() {
         if window == nil {
             let w = NSWindow(
-                contentRect: NSRect(x: 0, y: 0, width: 400, height: 826),
+                contentRect: NSRect(x: 0, y: 0, width: 400, height: 862),
                 styleMask: [.titled, .closable, .miniaturizable],
                 backing: .buffered, defer: false
             )
@@ -43,11 +43,7 @@ final class MainWindowController: NSObject {
         window?.contentView = buildContent()
         overlaySwitch?.state = (isOverlayOn?() ?? true) ? .on : .off
         soundsSwitch?.state = Sounds.shared.enabled ? .on : .off
-        let scale = UserDefaults.standard.double(forKey: "islandScale")
-        sizeSlider?.doubleValue = scale == 0 ? 1 : scale
-        tokensSwitch?.state = Display.showSessionTokens ? .on : .off
-        quotaSwitch?.state = Display.showQuotaInBar ? .on : .off
-        menuBarSwitch?.state = Display.menuBarFiveHour != "off" ? .on : .off
+        applyControlStates()
         window?.center()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
@@ -76,7 +72,7 @@ final class MainWindowController: NSObject {
         v.addSubview(l)
         let st = NSTextField(labelWithString: status)
         st.font = .systemFont(ofSize: 11)
-        st.textColor = status == "signed in" ? .systemGreen : .secondaryLabelColor
+        st.textColor = status.hasPrefix("signed in") ? .systemGreen : .secondaryLabelColor
         st.frame = NSRect(x: 138, y: y + 4, width: 130, height: 16)
         v.addSubview(st)
         if let buttonTitle, let action {
@@ -87,6 +83,31 @@ final class MainWindowController: NSObject {
             b.frame = NSRect(x: width - 24 - 90, y: y, width: 90, height: 24)
             v.addSubview(b)
         }
+    }
+
+    /// Řádek se sliderem (měřítko) + tlačítkem Reset. Vrací slider, ať jde nastavit hodnota.
+    private func sliderRow(_ v: NSView, label: String, y: CGFloat, min: Double, max: Double,
+                           action: Selector, reset: Selector) -> NSSlider {
+        let width = v.frame.width
+        let l = NSTextField(labelWithString: label)
+        l.frame = NSRect(x: 24, y: y + 4, width: 120, height: 20)
+        v.addSubview(l)
+        let slider = NSSlider(value: 1, minValue: min, maxValue: max, target: self, action: action)
+        slider.isContinuous = true
+        slider.frame = NSRect(x: 150, y: y, width: width - 150 - 24 - 66, height: 24)
+        v.addSubview(slider)
+        let b = NSButton(title: "Reset", target: self, action: reset)
+        b.bezelStyle = .rounded
+        b.controlSize = .small
+        b.font = .systemFont(ofSize: 11)
+        b.frame = NSRect(x: width - 24 - 58, y: y, width: 58, height: 22)
+        v.addSubview(b)
+        return slider
+    }
+
+    /// Index v popupu „Per session": 0 off, 1 tokens, 2 spend, 3 obojí.
+    private static func perSessionIndex() -> Int {
+        (Display.showSessionTokens ? 1 : 0) + (Display.showSessionSpend ? 2 : 0)
     }
 
     /// Řádek s popup výběrem; disabled položky zůstávají viditelné („soon").
@@ -127,7 +148,7 @@ final class MainWindowController: NSObject {
     }
 
     private func buildContent() -> NSView {
-        let width = 400.0, height = 826.0
+        let width = 400.0, height = 862.0
         let v = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
         // Kurzor: horní hrana dalšího prvku, klesá dolů. Žádné magic-numbers.
         var y = height - 16
@@ -162,25 +183,18 @@ final class MainWindowController: NSObject {
                                  action: #selector(toggleSounds(_:)))
         y -= 36
 
-        let sizeLabel = NSTextField(labelWithString: "Island size")
-        sizeLabel.frame = NSRect(x: 24, y: y + 4, width: 120, height: 20)
-        v.addSubview(sizeLabel)
-        let slider = NSSlider(value: 1, minValue: 0.7, maxValue: 1.5,
-                              target: self, action: #selector(sizeChanged(_:)))
-        slider.isContinuous = true
-        slider.frame = NSRect(x: 150, y: y, width: width - 150 - 24 - 66, height: 24)
-        v.addSubview(slider)
-        sizeSlider = slider
-        let reset = NSButton(title: "Reset", target: self, action: #selector(resetSize(_:)))
-        reset.bezelStyle = .rounded
-        reset.controlSize = .small
-        reset.font = .systemFont(ofSize: 11)
-        reset.frame = NSRect(x: width - 24 - 58, y: y, width: 58, height: 22)
-        v.addSubview(reset)
+        sizeSlider = sliderRow(v, label: "Island size", y: y, min: 0.7, max: 1.5,
+                               action: #selector(sizeChanged(_:)),
+                               reset: #selector(resetSize(_:)))
+        y -= 36
+        panelSlider = sliderRow(v, label: "Panel size", y: y, min: 0.8, max: 1.6,
+                                action: #selector(panelSizeChanged(_:)),
+                                reset: #selector(resetPanelSize(_:)))
         y -= 36
 
-        tokensSwitch = switchRow(v, label: "Tokens per session", y: y,
-                                 action: #selector(toggleTokens(_:)))
+        popupRow(v, label: "Per session", y: y,
+                 items: [("Off", true), ("Tokens", true), ("Spend", true), ("Tokens + spend", true)],
+                 selected: Self.perSessionIndex(), action: #selector(perSessionChanged(_:)))
         y -= 36
         quotaSwitch = switchRow(v, label: "Quota in the bar", y: y,
                                 action: #selector(toggleQuota(_:)))
@@ -232,10 +246,10 @@ final class MainWindowController: NSObject {
         y -= 30
 
         let claudeSt = claudeStatus?() ?? "checking…"
+        let claudeIn = claudeSt.hasPrefix("signed in")
         accountRow(v, name: "Claude", status: claudeSt, y: y,
-                   buttonTitle: claudeSt == "signed in" ? "Sign out" : "Sign in…",
-                   action: claudeSt == "signed in" ? #selector(signOutClaude(_:))
-                                                   : #selector(signIn(_:)))
+                   buttonTitle: claudeIn ? "Sign out" : "Sign in…",
+                   action: claudeIn ? #selector(signOutClaude(_:)) : #selector(signIn(_:)))
         y -= 30
         let codex = Providers.codex()
         accountRow(v, name: "Codex CLI", status: codex.label, y: y,
@@ -296,8 +310,21 @@ final class MainWindowController: NSObject {
         Sounds.shared.enabled = sender.state == .on
     }
 
-    @objc private func toggleTokens(_ sender: NSSwitch) {
-        Display.showSessionTokens = sender.state == .on
+    @objc private func perSessionChanged(_ sender: NSPopUpButton) {
+        let i = max(0, sender.indexOfSelectedItem)
+        Display.showSessionTokens = i == 1 || i == 3
+        Display.showSessionSpend = i == 2 || i == 3
+        onSizeChange?()
+    }
+
+    @objc private func panelSizeChanged(_ sender: NSSlider) {
+        UserDefaults.standard.set(sender.doubleValue, forKey: "panelScale")
+        onSizeChange?()
+    }
+
+    @objc private func resetPanelSize(_ sender: NSButton) {
+        UserDefaults.standard.removeObject(forKey: "panelScale")
+        panelSlider?.doubleValue = 1
         onSizeChange?()
     }
 
@@ -367,14 +394,20 @@ final class MainWindowController: NSObject {
     private func refresh() {
         guard let window, window.isVisible else { return }
         window.contentView = buildContent()
+        applyControlStates()
+        loadSpend()
+    }
+
+    /// Nastaví ovládací prvky podle uložených hodnot (po každém buildContent).
+    private func applyControlStates() {
         overlaySwitch?.state = (isOverlayOn?() ?? true) ? .on : .off
         soundsSwitch?.state = Sounds.shared.enabled ? .on : .off
         let scale = UserDefaults.standard.double(forKey: "islandScale")
         sizeSlider?.doubleValue = scale == 0 ? 1 : scale
-        tokensSwitch?.state = Display.showSessionTokens ? .on : .off
+        let panel = UserDefaults.standard.double(forKey: "panelScale")
+        panelSlider?.doubleValue = panel == 0 ? 1 : panel
         quotaSwitch?.state = Display.showQuotaInBar ? .on : .off
         menuBarSwitch?.state = Display.menuBarFiveHour != "off" ? .on : .off
-        loadSpend()
     }
 
     @objc private func quit(_ sender: NSButton) {

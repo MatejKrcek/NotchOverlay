@@ -73,9 +73,15 @@ final class IslandController: NSObject {
     private var pendingRender = false
     private var refreshTimer: Timer?
 
-    private let expandedWidth: CGFloat = 440
-    private let rowHeight: CGFloat = 46
-    private var headerHeight: CGFloat { Display.headerSecondLine == "none" ? 26 : 42 }
+    /// Rozbalený panel se škáluje podle `panelScale` (nastavení „Panel size") —
+    /// šířka, výška řádků i písma. Nezávislé na `sizeScale` křídel v liště.
+    private var panelScale: CGFloat {
+        let v = UserDefaults.standard.double(forKey: "panelScale")
+        return v == 0 ? 1 : CGFloat(min(max(v, 0.8), 1.6))
+    }
+    private var expandedWidth: CGFloat { 440 * panelScale }
+    private var rowHeight: CGFloat { 46 * panelScale }
+    private var headerHeight: CGFloat { (Display.headerSecondLine == "none" ? 26 : 42) * panelScale }
     private let maxVisibleRows = 8
     /// Paid: měřítko šířky islandu — roste jen do stran (křídla), výška je
     /// fixní podle notche.
@@ -350,11 +356,11 @@ final class IslandController: NSObject {
             var text = quotaHeaderText()
             if twoLines { text += "\n" + secondLineText() }
             let header = NSTextField(labelWithString: text)
-            header.font = .monospacedSystemFont(ofSize: 10.5, weight: .medium)
+            header.font = .monospacedSystemFont(ofSize: 10.5 * panelScale, weight: .medium)
             header.textColor = NSColor.white.withAlphaComponent(0.55)
             header.alignment = .center
             header.maximumNumberOfLines = 2
-            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: twoLines ? 32 : 16)
+            header.frame = NSRect(x: 12, y: 5, width: w - 24, height: (twoLines ? 32 : 16) * panelScale)
             listView.addSubview(header)
         }
 
@@ -385,28 +391,30 @@ final class IslandController: NSObject {
         let termProgram = s.termProgram
         row.onClick = { Jump.toTerminal(termProgram: termProgram) }
 
+        let ps = panelScale
         let dot = NSTextField(labelWithString: "●")
-        dot.font = .systemFont(ofSize: 12, weight: .bold)
+        dot.font = .systemFont(ofSize: 12 * ps, weight: .bold)
         dot.textColor = dotColor(s.state)
-        dot.frame = NSRect(x: 10, y: (rowHeight - 4 - 16) / 2, width: 16, height: 16)
+        dot.frame = NSRect(x: 10, y: (rowHeight - 4 - 16 * ps) / 2, width: 16 * ps, height: 16 * ps)
         row.addSubview(dot)
 
         let showButtons: Bool
         if case .permission = s.state { showButtons = true } else { showButtons = false }
-        let rightReserved: CGFloat = showButtons ? 150 : 64
+        let rightReserved: CGFloat = showButtons ? 150 : 64 * ps
+        let textX = 30 * ps
 
         let title = NSTextField(labelWithString: s.title)
-        title.font = .systemFont(ofSize: 12.5, weight: .semibold)
+        title.font = .systemFont(ofSize: 12.5 * ps, weight: .semibold)
         title.textColor = .white
         title.lineBreakMode = .byTruncatingTail
-        title.frame = NSRect(x: 30, y: rowHeight - 4 - 20, width: row.frame.width - 30 - rightReserved, height: 16)
+        title.frame = NSRect(x: textX, y: rowHeight - 4 - 20 * ps, width: row.frame.width - textX - rightReserved, height: 16 * ps)
         row.addSubview(title)
 
         let sub = NSTextField(labelWithString: subtitle(for: s))
-        sub.font = .systemFont(ofSize: 10.5)
+        sub.font = .systemFont(ofSize: 10.5 * ps)
         sub.textColor = NSColor.white.withAlphaComponent(0.55)
         sub.lineBreakMode = .byTruncatingTail
-        sub.frame = NSRect(x: 30, y: 5, width: row.frame.width - 30 - rightReserved, height: 14)
+        sub.frame = NSRect(x: textX, y: 5 * ps, width: row.frame.width - textX - rightReserved, height: 14 * ps)
         row.addSubview(sub)
 
         if showButtons {
@@ -425,10 +433,10 @@ final class IslandController: NSObject {
             row.addSubview(allow)
         } else {
             let time = NSTextField(labelWithString: elapsedString(since: s.lastActivity))
-            time.font = .monospacedSystemFont(ofSize: 10.5, weight: .regular)
+            time.font = .monospacedSystemFont(ofSize: 10.5 * ps, weight: .regular)
             time.textColor = NSColor.white.withAlphaComponent(0.45)
             time.alignment = .right
-            time.frame = NSRect(x: row.frame.width - 62, y: (rowHeight - 4 - 14) / 2, width: 54, height: 14)
+            time.frame = NSRect(x: row.frame.width - 62 * ps, y: (rowHeight - 4 - 14 * ps) / 2, width: 54 * ps, height: 14 * ps)
             row.addSubview(time)
         }
         return row
@@ -479,7 +487,10 @@ final class IslandController: NSObject {
             .paragraphStyle: para,
         ]))
         let pct: String
-        if let p = quota?.fiveHour?.pct { pct = "\(p)" }
+        if let p = quota?.fiveHour?.pct {
+            // „~" = poslední známá hodnota, token Claude Code prošel a čeká se na obnovu
+            if case .stale = quotaState { pct = "~\(p)" } else { pct = "\(p)" }
+        }
         else if case .signedOut = quotaState { pct = "–" }
         else { pct = "?" }
         s.append(NSAttributedString(string: "\(pct)%", attributes: [
@@ -497,7 +508,17 @@ final class IslandController: NSObject {
             case .rateLimited(let until): return "quota: rate limited · retry in \(remainingString(until: until))"
             case .signedOut: return "quota: not signed in"
             case .ok: return "quota: loading…"
+            case .stale: return "quota: waiting for Claude Code token"
             }
+        }
+        if case .stale(let since) = quotaState {
+            // Stará data: bez „resets in" (spočítalo by se z neaktuálního resetu),
+            // místo toho jak dlouho čekáme a proč.
+            var parts: [String] = []
+            if let fh = quota.fiveHour { parts.append("5h: ~\(fh.pct)%") }
+            if let wk = quota.sevenDay { parts.append("week: ~\(wk.pct)%") }
+            parts.append("stale \(elapsedString(since: since)) · Claude Code token expired")
+            return parts.joined(separator: " · ")
         }
         var parts: [String] = []
         if let fh = quota.fiveHour {
@@ -524,8 +545,11 @@ final class IslandController: NSObject {
                 return s
             case .planOnly(let plan):
                 return "codex: \(plan) plan · no limit windows"
+            case .apiKey:
+                // Přihlášení API klíčem = pay-per-token, Codex žádná 5h/týdenní okna nehlásí.
+                return "codex: API key auth · no rate limits (codex login for ChatGPT plan)"
             case nil:
-                return "codex: no data"
+                return "codex: no data yet"
             }
         case "fable":
             guard let fb = quota?.sevenDayFable else { return "fable: no data" }
@@ -567,6 +591,11 @@ final class IslandController: NSObject {
         if Display.showSessionTokens,
            let tok = usage.perSessionOutput[s.transcriptPath], tok > 0 {
             parts.append("\(shortTokens(tok)) tok")
+        }
+        // Odhad spendu této session (z transkriptu, viz Pricing) — pod cent neukazovat.
+        if Display.showSessionSpend,
+           let cost = usage.perSessionCost[s.transcriptPath], cost >= 0.005 {
+            parts.append(shortUSD(cost))
         }
         return parts.joined(separator: " · ")
     }

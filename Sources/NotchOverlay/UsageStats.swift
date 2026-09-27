@@ -53,6 +53,7 @@ final class UsageStats {
                 sum.todayCostUSD += e.cost
             }
             sum.perSessionOutput[e.path, default: 0] += e.output
+            sum.perSessionCost[e.path, default: 0] += e.cost
         }
         DispatchQueue.main.async { self.onUpdate?(sum) }
     }

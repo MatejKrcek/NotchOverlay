@@ -125,9 +125,16 @@ vypnutá do dalšího přihlášení).
   hotovo, deny). Defaultně vypnuté; zapnutí v nastavení.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
 - **Nastavení** (klik na appku nebo pravý klik na island) — island on/off,
-  velikost (0.7–1.5×), zvuky, tokeny per session, kvóta v liště, druhá řádka
+  velikost islandu (0.7–1.5×), velikost panelu (0.8–1.6×, rozbalený seznam),
+  zvuky, tokeny a/nebo odhad spendu per session, kvóta v liště, druhá řádka
   hlavičky (Codex limit z lokálních session dat / Fable 5 limit), účty
   Claude/Codex/Gemini se sign in/out a Quit.
+- **Indikace neaktuální kvóty** — appka čte OAuth token Claude Code a sama ho
+  nikdy neobnovuje (refresh tokeny rotují). Když token prošel, hodnoty se
+  ukazují jako `~12%` s poznámkou „stale" a Keychain se čte každých 30 s,
+  dokud si ho Claude Code neobnoví.
+- **Codex** — limit okna hlásí jen při přihlášení ChatGPT plánem; u API klíče
+  to hlavička řekne místo „no data".
 
 ## Zdroje dat
 

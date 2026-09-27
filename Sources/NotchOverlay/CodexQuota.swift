@@ -8,6 +8,8 @@ enum CodexQuota {
     enum Info {
         case window(pct: Int, resetsAt: Date?)
         case planOnly(String)   // plán bez limit oken, např. "business"
+        /// Přihlášení API klíčem — Codex nehlásí žádná okna (rate_limits je vždy null).
+        case apiKey
     }
 
     private static var cached: Info??
@@ -22,6 +24,13 @@ enum CodexQuota {
     }
 
     private static func read() -> Info? {
+        // Nejdřív zkusit reálná okna ze session souborů; když žádná nejsou a
+        // uživatel je přihlášený API klíčem, je to očekávané — říct to místo „no data".
+        if let fromSessions = readSessions() { return fromSessions }
+        return Providers.codexAuthMode() == "apikey" ? .apiKey : nil
+    }
+
+    private static func readSessions() -> Info? {
         let root = NSString(string: "~/.codex/sessions").expandingTildeInPath
         let fm = FileManager.default
         guard let en = fm.enumerator(atPath: root) else { return nil }

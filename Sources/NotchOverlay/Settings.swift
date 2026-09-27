@@ -7,6 +7,11 @@ enum Display {
         get { !UserDefaults.standard.bool(forKey: "hideSessionTokens") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideSessionTokens") }
     }
+    /// Odhad spendu ($) u každé session v rozbaleném panelu.
+    static var showSessionSpend: Bool {
+        get { !UserDefaults.standard.bool(forKey: "hideSessionSpend") }
+        set { UserDefaults.standard.set(!newValue, forKey: "hideSessionSpend") }
+    }
     static var showQuotaInBar: Bool {
         get { !UserDefaults.standard.bool(forKey: "hideQuotaBar") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideQuotaBar") }
@@ -41,10 +46,13 @@ struct ProviderStatus {
     let installed: Bool
     let signedIn: Bool
     let loginCommand: String?
+    /// Doplněk ke stavu, např. "API key" — jak je uživatel přihlášený.
+    var detail: String? = nil
 
     var label: String {
         if !installed { return "not installed" }
-        return signedIn ? "signed in" : "not signed in"
+        guard signedIn else { return "not signed in" }
+        return detail.map { "signed in (\($0))" } ?? "signed in"
     }
 }
 
@@ -64,8 +72,23 @@ enum Providers {
             name: "Codex CLI",
             installed: binaryInstalled("codex") || exists("~/.codex"),
             signedIn: exists("~/.codex/auth.json"),
-            loginCommand: "codex login"
+            loginCommand: "codex login",
+            detail: codexAuthMode() == "apikey" ? "API key" : nil
         )
+    }
+
+    /// `auth_mode` z ~/.codex/auth.json: "apikey" (pay-per-token, žádná limit
+    /// okna) nebo "chatgpt" (plán s 5h/týdenními limity). nil = nepřihlášen.
+    static func codexAuthMode() -> String? {
+        let path = NSString(string: "~/.codex/auth.json").expandingTildeInPath
+        guard let data = FileManager.default.contents(atPath: path),
+              let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        else { return nil }
+        if let mode = obj["auth_mode"] as? String { return mode.lowercased() }
+        // starší auth.json bez auth_mode: klíč = apikey, tokeny = chatgpt
+        if obj["OPENAI_API_KEY"] != nil { return "apikey" }
+        if obj["tokens"] != nil { return "chatgpt" }
+        return nil
     }
 
     static func gemini() -> ProviderStatus {

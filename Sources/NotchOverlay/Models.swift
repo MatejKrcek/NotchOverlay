@@ -44,6 +44,8 @@ struct UsageSummary: Equatable {
     var fiveHourCostUSD: Double = 0
     /// Paid: output tokeny per session (klíč = cesta k transkriptu, okno 26 h).
     var perSessionOutput: [String: Int] = [:]
+    /// Odhad spendu (USD) per session — stejný klíč a okno jako perSessionOutput.
+    var perSessionCost: [String: Double] = [:]
 }
 
 /// Sdílený odhad cen — jeden zdroj pravdy pro UsageStats i SpendStats.

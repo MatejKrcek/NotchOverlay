@@ -77,6 +77,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainWindowController.shared.claudeStatus = { [weak self] in
             switch self?.quotaFetchState {
             case .ok: return "signed in"
+            case .stale: return "signed in (Claude Code token expired)"
             case .signedOut: return "not signed in"
             default: return "checking…"
             }

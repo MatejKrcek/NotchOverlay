@@ -18,12 +18,24 @@ enum QuotaFetchState: Equatable {
     case ok(QuotaStatus)
     case rateLimited(until: Date)
     case signedOut
+    /// Půjčený token Claude Code prošel a appka ho sama neobnovuje (viz QuotaFetcher).
+    /// UI drží poslední hodnoty, ale musí je označit jako neaktuální. `since` = kdy
+    /// jsme to zjistili poprvé (drží se, ať se UI zbytečně nepřekresluje).
+    case stale(since: Date)
 }
 
 /// Reálný stav rate limitů z api.anthropic.com/api/oauth/usage.
 /// Credentials bere z Keychain: nejdřív vlastní („NotchOverlay-credentials",
 /// vytvoří je in-app login), jinak od Claude Code („Claude Code-credentials").
-/// Prošlý access token si obnoví přes refresh token (jen v paměti).
+///
+/// Refresh tokeny se ROTUJÍ: každé použití vrátí nový a ten starý zneplatní.
+/// Proto:
+///  - token Claude Code se jen čte — NIKDY se přes jeho refresh token
+///    neobnovuje. Kdybychom to udělali, Claude Code by měl v Keychain mrtvý
+///    refresh token a při příští obnově (8 h) by uživatele odhlásil („/login"
+///    dvakrát denně). Když je prošlý, počkáme, až si ho Claude Code obnoví sám.
+///  - vlastní credentials obnovujeme, ale nový refresh token + expiraci hned
+///    zapíšeme zpět do Keychain, ať další refresh po 8 h neselže.
 final class QuotaFetcher {
     var onState: ((QuotaFetchState) -> Void)?
 
@@ -38,9 +50,23 @@ final class QuotaFetcher {
 
     /// Kvóty se mění pomalu — 5min interval, ať nedráždíme rate limit endpointu.
     private let interval: TimeInterval = 300
+    /// Když půjčený token Claude Code prošel, nečekáme 5 min — Keychain je lokální,
+    /// tak ho kontrolujeme každých 30 s, ať po obnově dohoníme stav rychle.
+    private let staleInterval: TimeInterval = 30
     private var backoffUntil: Date = .distantPast
+    private var staleSince: Date?
 
-    private let keychainServices = ["NotchOverlay-credentials", "Claude Code-credentials"]
+    private static let ownService = "NotchOverlay-credentials"
+    private static let claudeCodeService = "Claude Code-credentials"
+    private let keychainServices = [ownService, claudeCodeService]
+
+    private enum TokenLookup {
+        case token(String)
+        /// Žádné credentials (ani vlastní, ani Claude Code) / explicitní odhlášení.
+        case none
+        /// Půjčený token Claude Code je prošlý — neobnovujeme ho, čekáme na Claude Code.
+        case borrowedExpired
+    }
 
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
@@ -69,9 +95,23 @@ final class QuotaFetcher {
             push(.rateLimited(until: backoffUntil))
             return
         }
-        guard let token = currentToken() else {
+        let token: String
+        switch currentToken() {
+        case .token(let t):
+            token = t
+        case .none:
             debug("keychain: žádné credentials")
+            setStale(false)
             push(.signedOut)
+            return
+        case .borrowedExpired:
+            // UI si drží poslední hodnotu, ale označí ji jako stale; Claude Code si
+            // token obnoví při dalším použití — do té doby čteme Keychain po 30 s.
+            if staleSince == nil {
+                debug("keychain: token Claude Code prošlý — čekám, až si ho Claude Code obnoví")
+            }
+            setStale(true)
+            push(.stale(since: staleSince ?? Date()))
             return
         }
         var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/usage")!)
@@ -113,7 +153,25 @@ final class QuotaFetcher {
         }.resume()
         sem.wait()
         // Jen úspěch přepisuje data — po přechodné chybě si UI drží poslední hodnotu.
-        if let result { push(.ok(result)) }
+        if let result {
+            if staleSince != nil { debug("keychain: token obnoven, kvóty zase aktuální") }
+            setStale(false)
+            push(.ok(result))
+        }
+    }
+
+    /// Přepne interval timeru: 30 s dokud čekáme na obnovu půjčeného tokenu,
+    /// jinak standardních 5 min. Volat jen z `queue`.
+    private func setStale(_ stale: Bool) {
+        if stale {
+            guard staleSince == nil else { return }
+            staleSince = Date()
+            timer?.schedule(deadline: .now() + staleInterval, repeating: staleInterval)
+        } else {
+            guard staleSince != nil else { return }
+            staleSince = nil
+            timer?.schedule(deadline: .now() + interval, repeating: interval)
+        }
     }
 
     /// Model-scoped limit z pole `limits` (weekly_scoped se scope.model
@@ -155,21 +213,25 @@ final class QuotaFetcher {
 
     // MARK: - Tokeny
 
-    private func currentToken() -> String? {
+    private func currentToken() -> TokenLookup {
         // Uživatel se explicitně odhlásil — nepoužívat ani fallback credentials.
-        guard !UserDefaults.standard.bool(forKey: "claudeSignedOut") else { return nil }
-        if let t = cachedToken, let e = cachedExpiry, e.timeIntervalSinceNow > 60 { return t }
-        guard let creds = readCredentials() else { return nil }
+        guard !UserDefaults.standard.bool(forKey: "claudeSignedOut") else { return .none }
+        if let t = cachedToken, let e = cachedExpiry, e.timeIntervalSinceNow > 60 { return .token(t) }
+        guard let creds = readCredentials() else { return .none }
         if let exp = creds.expiresAt, exp.timeIntervalSinceNow > 60 {
-            return creds.access
+            return .token(creds.access)
         }
-        if let refresh = creds.refresh, let fresh = refreshAccessToken(refresh) {
-            return fresh
+        if creds.service == Self.claudeCodeService {
+            // Cizí refresh token nepoužívat (rotace by odhlásila Claude Code).
+            return creds.expiresAt == nil ? .token(creds.access) : .borrowedExpired
         }
-        return creds.access  // poslední pokus — třeba ještě platí
+        if let refresh = creds.refresh, !refresh.isEmpty, let fresh = refreshAccessToken(refresh) {
+            return .token(fresh)
+        }
+        return .token(creds.access)  // poslední pokus — třeba ještě platí
     }
 
-    private func readCredentials() -> (access: String, refresh: String?, expiresAt: Date?)? {
+    private func readCredentials() -> (service: String, access: String, refresh: String?, expiresAt: Date?)? {
         for service in keychainServices {
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
@@ -191,11 +253,37 @@ final class QuotaFetcher {
                 if let ms = oauth["expiresAt"] as? Double {
                     expires = Date(timeIntervalSince1970: ms / 1000)
                 }
-                return (token, oauth["refreshToken"] as? String, expires)
+                return (service, token, oauth["refreshToken"] as? String, expires)
             }
-            return (text, nil, nil)  // kdyby v Keychain byl token přímo
+            return (service, text, nil, nil)  // kdyby v Keychain byl token přímo
         }
         return nil
+    }
+
+    /// Zapíše obnovené vlastní credentials zpět do Keychain (stejný tvar jako
+    /// Login.swift), aby rotovaný refresh token nezůstal jen v paměti.
+    private func persistOwnCredentials(access: String, refresh: String, expiresAt: Date) {
+        let creds: [String: Any] = ["claudeAiOauth": [
+            "accessToken": access,
+            "refreshToken": refresh,
+            "expiresAt": expiresAt.timeIntervalSince1970 * 1000,
+        ]]
+        guard let json = try? JSONSerialization.data(withJSONObject: creds),
+              let jsonStr = String(data: json, encoding: .utf8)
+        else { debug("keychain: credentials nejdou serializovat"); return }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/security")
+        p.arguments = ["add-generic-password", "-U", "-a", "notch",
+                       "-s", Self.ownService, "-w", jsonStr]
+        p.standardOutput = Pipe()
+        p.standardError = Pipe()
+        do {
+            try p.run()
+            p.waitUntilExit()
+            if p.terminationStatus != 0 { debug("keychain: add-generic-password exit \(p.terminationStatus)") }
+        } catch {
+            debug("keychain: security nejde spustit: \(error.localizedDescription)")
+        }
     }
 
     private func refreshAccessToken(_ refreshToken: String) -> String? {
@@ -226,6 +314,11 @@ final class QuotaFetcher {
             self.cachedToken = access
             self.cachedExpiry = Date().addingTimeInterval(ttl - 300)
             self.debug("refresh: nový access token, platí \(Int(ttl)) s")
+            // Rotace: server vrátil nový refresh token a starý zneplatnil — uložit,
+            // jinak by další refresh (po 8 h) selhal a overlay by se „odhlásil".
+            let rotated = (obj["refresh_token"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? refreshToken
+            self.persistOwnCredentials(access: access, refresh: rotated,
+                                       expiresAt: Date().addingTimeInterval(ttl))
             token = access
         }.resume()
         sem.wait()

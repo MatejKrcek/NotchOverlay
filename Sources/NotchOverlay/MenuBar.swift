@@ -10,6 +10,8 @@ final class MenuBarController: NSObject {
     private var timer: Timer?
     private var fiveHour: QuotaWindow?
     private var signedOut = false
+    /// Token Claude Code prošel — hodnota je poslední známá, ne aktuální.
+    private var stale = false
     private var infoItem: NSMenuItem?
 
     func start() { applyMode() }
@@ -44,8 +46,12 @@ final class MenuBarController: NSObject {
         case .ok(let q):
             fiveHour = q.fiveHour
             signedOut = false
+            stale = false
         case .signedOut:
             signedOut = true
+            stale = false
+        case .stale:
+            stale = true
         default:
             break  // přechodná chyba — držet poslední hodnotu
         }
@@ -85,17 +91,18 @@ final class MenuBarController: NSObject {
             f.dateFormat = "H:mm"
             return f.string(from: reset)
         }
-        return "\(w.pct)%"
+        return stale ? "~\(w.pct)%" : "\(w.pct)%"
     }
 
     private func detail() -> String {
         if signedOut { return "Claude: not signed in" }
+        let staleNote = stale ? " · stale (Claude Code token expired, waiting for refresh)" : ""
         guard let w = fiveHour, let reset = w.resetsAt, reset.timeIntervalSinceNow > 0 else {
-            return "5h session: no active window"
+            return "5h session: no active window" + staleNote
         }
         let f = DateFormatter()
         f.dateFormat = "H:mm"
-        return "5h session: \(w.pct) % used · resets \(f.string(from: reset))"
+        return "5h session: \(w.pct) % used · resets \(f.string(from: reset))" + staleNote
     }
 
     private func buildMenu() -> NSMenu {

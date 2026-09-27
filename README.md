@@ -127,9 +127,16 @@ until your next login).
   done, deny). Off by default; enable in settings.
 - **Non-activating overlay** — the panel never steals focus or activation.
 - **Settings** (click the app or right-click the island) — island on/off,
-  size (0.7–1.5×), sounds, tokens per session, quota in the bar, header
-  second line (Codex limit from local session data / Fable 5 limit),
+  island size (0.7–1.5×), panel size (0.8–1.6×, the expanded list), sounds,
+  per-session tokens and/or spend estimate, quota in the bar, header second
+  line (Codex limit from local session data / Fable 5 limit),
   Claude/Codex/Gemini accounts with sign in/out, and Quit.
+- **Stale quota indicator** — the app reads the Claude Code OAuth token and
+  never refreshes it itself (refresh tokens rotate). When that token expires,
+  values are shown as `~12%` with a "stale" note and the Keychain is re-read
+  every 30 s until Claude Code refreshes it.
+- **Codex** — limit windows are only reported when Codex is signed in with a
+  ChatGPT plan; with an API key login the header says so instead of "no data".
 
 ## Data sources
 
