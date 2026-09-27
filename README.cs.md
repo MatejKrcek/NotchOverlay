@@ -124,7 +124,8 @@ vypnutá do dalšího přihlášení).
 - **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
   hotovo, deny). Defaultně vypnuté; zapnutí v nastavení.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
-- **Nastavení** (klik na appku nebo pravý klik na island) — island on/off,
+- **Nastavení** (klik na appku nebo pravý klik na island; okno na šířku ve dvou
+  sloupcích, resizovatelné, pamatuje si velikost) — island on/off,
   velikost islandu (0.7–1.5×), velikost panelu (0.8–1.6×, rozbalený seznam),
   zvuky, tokeny a/nebo odhad spendu per session, kvóta v liště, druhá řádka
   hlavičky (Codex limit z lokálních session dat / Fable 5 limit), účty

@@ -126,7 +126,8 @@ until your next login).
 - **8-bit sounds** — synthesized square wave (start, permission, question,
   done, deny). Off by default; enable in settings.
 - **Non-activating overlay** — the panel never steals focus or activation.
-- **Settings** (click the app or right-click the island) — island on/off,
+- **Settings** (click the app or right-click the island; landscape two-column
+  window, resizable, remembers its size) — island on/off,
   island size (0.7–1.5×), panel size (0.8–1.6×, the expanded list), sounds,
   per-session tokens and/or spend estimate, quota in the bar, header second
   line (Codex limit from local session data / Fable 5 limit),

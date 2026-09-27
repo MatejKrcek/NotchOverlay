@@ -38,6 +38,7 @@ cd "$(dirname "$SRC")"
 
 ./build.sh
 
+VERSION="$(cat VERSION 2>/dev/null || echo 1.0.0)"
 APP="/Applications/NotchOverlay.app"
 LABEL="com.matejkrcek.notchoverlay"
 AGENT="$HOME/Library/LaunchAgents/$LABEL.plist"
@@ -47,7 +48,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp bin/NotchOverlay "$APP/Contents/MacOS/NotchOverlay"
 cp Assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
-cat > "$APP/Contents/Info.plist" <<'EOF'
+cat > "$APP/Contents/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -56,8 +57,8 @@ cat > "$APP/Contents/Info.plist" <<'EOF'
 	<key>CFBundleIdentifier</key><string>com.matejkrcek.notchoverlay</string>
 	<key>CFBundleName</key><string>NotchOverlay</string>
 	<key>CFBundleDisplayName</key><string>NotchOverlay</string>
-	<key>CFBundleVersion</key><string>1.0</string>
-	<key>CFBundleShortVersionString</key><string>1.0</string>
+	<key>CFBundleVersion</key><string>$VERSION</string>
+	<key>CFBundleShortVersionString</key><string>$VERSION</string>
 	<key>CFBundlePackageType</key><string>APPL</string>
 	<key>CFBundleIconFile</key><string>AppIcon</string>
 	<key>LSMinimumSystemVersion</key><string>13.0</string>
