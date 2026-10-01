@@ -40,10 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.monitor.applyHookEvent(sessionId: sessionId, state: state, termProgram: term, ended: ended)
         }
         quota.onState = { [weak self] state in
-            self?.island.update(quotaState: state)
+            guard let self else { return }
+            self.island.update(quotaState: state)
             MenuBarController.shared.update(quotaState: state)
-            self?.quotaFetchState = state
-            if case .ok(let status) = state { self?.lastQuota = status }
+            let before = self.claudeStatusLabel()
+            self.quotaFetchState = state
+            if case .ok(let status) = state { self.lastQuota = status }
+            // Otevřené nastavení ať hned ukáže nový stav účtu (např. po in-app loginu).
+            if self.claudeStatusLabel() != before { MainWindowController.shared.accountsChanged() }
         }
         island.onSignInRequested = { [weak self] in
             LoginController.shared.onSuccess = {
@@ -75,12 +79,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.island.sizeChanged()
         }
         MainWindowController.shared.claudeStatus = { [weak self] in
-            switch self?.quotaFetchState {
-            case .ok: return "signed in"
-            case .stale: return "signed in (Claude Code token expired)"
-            case .signedOut: return "not signed in"
-            default: return "checking…"
-            }
+            self?.claudeStatusLabel() ?? "checking…"
         }
         if UserDefaults.standard.bool(forKey: "overlayHidden") {
             island.setVisible(false)
@@ -102,6 +101,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainWindowController.shared.present()
         return false
     }
+
+    /// Stav účtu Claude pro nastavení. Prošlý půjčený token Claude Code se nevydává
+    /// za „signed in" — řádek pak nabídne vlastní login, jehož token appka obnovuje sama.
+    private func claudeStatusLabel() -> String {
+        switch quotaFetchState {
+        case .ok: return "signed in"
+        case .stale: return "Claude Code token expired"
+        case .signedOut: return "not signed in"
+        default: return "checking…"
+        }
+    }
+
     /// Debug/introspekce: aktuální stav sessions v ~/.claude/vibe-state.json
     private static func dumpState(_ sessions: [AgentSession], quota: QuotaStatus?) {
         let rows = sessions.map { s -> [String: Any] in

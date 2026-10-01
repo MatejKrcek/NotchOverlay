@@ -100,14 +100,17 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     private func accountRow(_ v: NSView, col: Column, name: String, status: String, y: CGFloat,
-                            buttonTitle: String?, action: Selector?) {
+                            buttonTitle: String?, action: Selector?,
+                            warning: Bool = false, tooltip: String? = nil) {
         let l = NSTextField(labelWithString: name)
         l.font = .systemFont(ofSize: 12, weight: .medium)
         l.frame = NSRect(x: col.x, y: y + 3, width: 90, height: 18)
         v.addSubview(l)
         let st = NSTextField(labelWithString: status)
         st.font = .systemFont(ofSize: 11)
-        st.textColor = status.hasPrefix("signed in") ? .systemGreen : .secondaryLabelColor
+        st.textColor = warning ? .systemOrange
+            : status.hasPrefix("signed in") ? .systemGreen : .secondaryLabelColor
+        st.toolTip = tooltip ?? status
         st.lineBreakMode = .byTruncatingTail
         st.frame = NSRect(x: col.x + 94, y: y + 4, width: max(40, col.w - 94 - 98), height: 16)
         v.addSubview(st)
@@ -257,9 +260,14 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         sectionHeader("ACCOUNTS", in: right, y: y, v: v); y -= 30
         let claudeSt = claudeStatus?() ?? "checking…"
         let claudeIn = claudeSt.hasPrefix("signed in")
+        let claudeExpired = claudeSt.contains("expired")
         accountRow(v, col: right, name: "Claude", status: claudeSt, y: y,
                    buttonTitle: claudeIn ? "Sign out" : "Sign in…",
-                   action: claudeIn ? #selector(signOutClaude(_:)) : #selector(signIn(_:)))
+                   action: claudeIn ? #selector(signOutClaude(_:)) : #selector(signIn(_:)),
+                   warning: claudeExpired,
+                   tooltip: claudeExpired
+                       ? "Quotas are borrowed from Claude Code, whose token expired. NotchOverlay can't refresh it without logging Claude Code out. Sign in here and NotchOverlay keeps its own token fresh automatically."
+                       : nil)
         y -= 30
         let codex = Providers.codex()
         accountRow(v, col: right, name: "Codex CLI", status: codex.label, y: y,
@@ -398,6 +406,11 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     @objc private func signOutGemini(_ sender: NSButton) {
         Providers.signOutGemini()
+        refresh()
+    }
+
+    /// Stav účtu se změnil mimo okno (kvóty, login) — překreslit, pokud je otevřené.
+    func accountsChanged() {
         refresh()
     }
 
