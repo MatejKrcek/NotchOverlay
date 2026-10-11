@@ -72,6 +72,7 @@ final class IslandController: NSObject {
     private var animating = false
     private var pendingRender = false
     private var refreshTimer: Timer?
+    private var offscreenTicks = 0
 
     /// Rozbalený panel se škáluje podle `panelScale` (nastavení „Panel size") —
     /// šířka, výška řádků i písma. Nezávislé na `sizeScale` křídel v liště.
@@ -109,13 +110,62 @@ final class IslandController: NSObject {
             self, selector: #selector(screensChanged),
             name: NSApplication.didChangeScreenParametersNotification, object: nil
         )
+        // Po probuzení displeje / Macu island přestavět, i když didChangeScreenParameters nepřijde.
+        let ws = NSWorkspace.shared.notificationCenter
+        for name in [NSWorkspace.screensDidWakeNotification, NSWorkspace.didWakeNotification,
+                     NSWorkspace.sessionDidBecomeActiveNotification] {
+            ws.addObserver(self, selector: #selector(screensChanged), name: name, object: nil)
+        }
         refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self, self.expanded, !self.animating else { return }
+            guard let self else { return }
+            self.ensureOnScreen()
+            guard self.expanded, !self.animating else { return }
             self.renderList()
         }
     }
 
     @objc private func screensChanged() { rebuildForCurrentScreen() }
+
+    /// Pojistka: island nesmí zůstat schovaný jen proto, že o tom appka neví
+    /// (rebuild během spánku displeje bez obrazovky, systém okno odsune…).
+    private func ensureOnScreen() {
+        guard overlayVisible else { return }
+        guard let panel else {
+            rebuildForCurrentScreen()
+            if panel != nil { Self.log("panel chyběl — znovu vytvořen") }
+            return
+        }
+        let appKitVisible = panel.isVisible
+        guard !appKitVisible || !Self.isOnScreen(panel) else {
+            offscreenTicks = 0
+            return
+        }
+        panel.orderFrontRegardless()
+        // Čerstvě postavený panel WindowServer hlásí až o chvilku později a při spánku
+        // displeje může být mimo obrazovku pořád — loguje se jen jednou, až když to trvá.
+        offscreenTicks += 1
+        if offscreenTicks == 3 { Self.log("panel není na obrazovce (isVisible=\(appKitVisible)) — vracím") }
+    }
+
+    /// Stav podle WindowServeru — AppKitové isVisible o odsunutí systémem neví.
+    private static func isOnScreen(_ window: NSWindow) -> Bool {
+        guard let info = CGWindowListCopyWindowInfo([.optionIncludingWindow], CGWindowID(window.windowNumber))
+                as? [[String: Any]], let w = info.first
+        else { return true }
+        return (w[kCGWindowIsOnscreen as String] as? Bool) ?? false
+    }
+
+    static func log(_ msg: String) {
+        let path = NSString(string: "~/.claude/vibe-island-debug.txt").expandingTildeInPath
+        let line = "\(Date()) \(msg)\n"
+        if let h = FileHandle(forWritingAtPath: path) {
+            h.seekToEndOfFile()
+            h.write(line.data(using: .utf8)!)
+            try? h.close()
+        } else {
+            try? line.write(toFile: path, atomically: true, encoding: .utf8)
+        }
+    }
 
     func update(sessions: [AgentSession]) {
         guard sessions != self.sessions else { return }
@@ -147,15 +197,19 @@ final class IslandController: NSObject {
     }
 
     private func rebuildForCurrentScreen() {
-        panel?.close()
-        panel = nil
-
         let builtIn = NSScreen.screens.first { s in
             guard let id = s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID
             else { return false }
             return CGDisplayIsBuiltin(id) != 0
         }
-        guard let screen = builtIn ?? NSScreen.main ?? NSScreen.screens.first else { return }
+        // Bez obrazovky (spánek displeje, přepojování monitorů) starý panel nechat —
+        // dřív se zavřel a island zůstal pryč až do restartu appky.
+        guard let screen = builtIn ?? NSScreen.main ?? NSScreen.screens.first else {
+            if panel != nil { Self.log("rebuild bez obrazovky — panel ponechán") }
+            return
+        }
+        panel?.close()
+        panel = nil
         self.screen = screen
 
         hasNotch = screen.safeAreaInsets.top > 0
