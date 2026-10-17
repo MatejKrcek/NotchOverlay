@@ -72,6 +72,7 @@ final class IslandController: NSObject {
     private var animating = false
     private var pendingRender = false
     private var refreshTimer: Timer?
+    private var listRefreshTimer: Timer?
     private var offscreenTicks = 0
 
     /// Rozbalený panel se škáluje podle `panelScale` (nastavení „Panel size") —
@@ -116,12 +117,26 @@ final class IslandController: NSObject {
                      NSWorkspace.sessionDidBecomeActiveNotification] {
             ws.addObserver(self, selector: #selector(screensChanged), name: name, object: nil)
         }
-        refreshTimer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
-            guard let self else { return }
-            self.ensureOnScreen()
-            guard self.expanded, !self.animating else { return }
+        // Pojistka viditelnosti: WindowServer IPC po 5 s s tolerancí (slučování
+        // probuzení kvůli baterii). Rozbalený seznam má vlastní 1s timer jen
+        // po dobu hoveru (listRefreshTimer).
+        refreshTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.ensureOnScreen()
+        }
+        refreshTimer?.tolerance = 2
+    }
+
+    /// Živé časy („před 12 s") v rozbaleném panelu tikají jen dokud je rozbalený.
+    private func setListRefresh(_ on: Bool) {
+        listRefreshTimer?.invalidate()
+        listRefreshTimer = nil
+        guard on else { return }
+        let t = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
+            guard let self, self.expanded, !self.animating else { return }
             self.renderList()
         }
+        t.tolerance = 0.2
+        listRefreshTimer = t
     }
 
     @objc private func screensChanged() { rebuildForCurrentScreen() }
@@ -274,6 +289,7 @@ final class IslandController: NSObject {
         panel = p
         expanded = false
         animating = false
+        setListRefresh(false)
         renderStrip()
         renderList()
         if overlayVisible { p.orderFrontRegardless() }
@@ -330,6 +346,7 @@ final class IslandController: NSObject {
     private func setExpanded(_ value: Bool) {
         guard expanded != value, let panel else { return }
         expanded = value
+        setListRefresh(value)
         if value { renderList() }  // čerstvý obsah ještě před odkrytím
         animating = true
         let target = islandFrame(expanded: value, in: panel.contentView!.bounds.size)
