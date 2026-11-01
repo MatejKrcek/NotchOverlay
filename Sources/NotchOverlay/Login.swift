@@ -24,7 +24,9 @@ final class LoginController: NSObject {
         // PKCE parametry se generují jen tady — „Open browser again" musí použít
         // stejný verifier, jinak kód z dříve otevřené autorizace nejde vyměnit.
         verifier = Self.base64url(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
-        stateParam = Self.base64url(SymmetricKey(size: .bits128).withUnsafeBytes { Data($0) })
+        // State musí mít 256 bitů (43 znaků) — s kratším claude.ai po „Authorize"
+        // hlásí „Invalid request format".
+        stateParam = Self.base64url(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
         startAuth()
         NSApp.activate(ignoringOtherApps: true)
         window?.center()
