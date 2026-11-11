@@ -28,9 +28,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     private var spendYear: NSTextField?
     private let spendStats = SpendStats()
     private var spendCache: SpendSummary?
+    private var weatherSwitch: NSSwitch?
 
-    private static let defaultSize = NSSize(width: 760, height: 520)
-    private static let minSize = NSSize(width: 620, height: 480)
+    private static let defaultSize = NSSize(width: 1120, height: 620)
+    private static let minSize = NSSize(width: 980, height: 600)
     private let margin: CGFloat = 24
     private let rowStep: CGFloat = 36
 
@@ -50,6 +51,14 @@ final class MainWindowController: NSObject, NSWindowDelegate {
             w.delegate = self
             // Pamatuje si velikost a pozici; při prvním otevření se vycentruje.
             if !w.setFrameUsingName("NotchOverlaySettings") { w.center() }
+            // uložený rámeček ze starší verze (bez sloupce Weather) je moc malý
+            if w.frame.width < Self.minSize.width || w.frame.height < Self.minSize.height {
+                var f = w.frame
+                f.size.width = max(f.width, Self.defaultSize.width)
+                f.size.height = max(f.height, Self.defaultSize.height)
+                w.setFrame(f, display: false)
+                w.center()
+            }
             w.setFrameAutosaveName("NotchOverlaySettings")
             window = w
         }
@@ -189,9 +198,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         let width = size.width, height = size.height
         let v = NSView(frame: NSRect(origin: .zero, size: size))
         let gap: CGFloat = 32
-        let colW = (width - 2 * margin - gap) / 2
+        let colW = (width - 2 * margin - 2 * gap) / 3
         let left = Column(x: margin, w: colW)
         let right = Column(x: margin + colW + gap, w: colW)
+        let weather = Column(x: margin + 2 * (colW + gap), w: colW)
 
         // Hlavička: ikona + název + podtitul v jednom řádku přes celou šířku.
         var y = height - 16 - 40
@@ -296,7 +306,184 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         note.frame = NSRect(x: right.x, y: quitY, width: right.w, height: 14)
         v.addSubview(note)
 
+        buildWeather(v, col: weather, top: top)
         return v
+    }
+
+    // MARK: - Weather
+
+    /// Třetí sloupec: sníh / listí / déšť / třešňový květ přes celou plochu.
+    private func buildWeather(_ v: NSView, col: Column, top: CGFloat) {
+        let step: CGFloat = 32
+        let mode = WeatherPrefs.mode
+        let rain = mode == .rain
+        var y = top
+        sectionHeader("WEATHER", in: col, y: y, v: v); y -= 30
+
+        weatherSwitch = switchRow(v, col: col, label: "Weather on desktop", y: y,
+                                  action: #selector(toggleWeather(_:)))
+        weatherSwitch?.state = WeatherPrefs.enabled ? .on : .off
+        y -= step
+
+        popupRow(v, col: col, label: "Mode", y: y,
+                 items: WeatherMode.allCases.map { ($0.title, true) },
+                 selected: WeatherMode.allCases.firstIndex(of: mode) ?? 0,
+                 action: #selector(weatherModeChanged(_:)))
+        y -= step
+
+        let halloween = switchRow(v, col: col, label: "Halloween", y: y, action: #selector(toggleHalloween(_:)))
+        halloween.state = (WeatherPrefs.halloween || (WeatherPrefs.isHalloweenSeason() && mode == .snow)) ? .on : .off
+        halloween.isEnabled = mode == .snow && !WeatherPrefs.isHalloweenSeason()
+        halloween.toolTip = "Jack-o'-lanterns and ghosts in the snow. On by itself from October 30 until dawn on November 1."
+        y -= step
+
+        popupRow(v, col: col, label: "Intensity", y: y,
+                 items: WeatherIntensity.allCases.map { ($0.title, true) },
+                 selected: WeatherIntensity.allCases.firstIndex(of: WeatherPrefs.intensity) ?? 1,
+                 action: #selector(weatherIntensityChanged(_:)))
+        y -= step
+
+        let opacity = sliderRow(v, col: col, label: "Opacity", y: y, min: 0.2, max: 1,
+                                action: #selector(weatherOpacityChanged(_:)),
+                                reset: #selector(resetWeatherOpacity(_:)))
+        opacity.doubleValue = WeatherPrefs.opacity
+        y -= step
+
+        // Accumulate: na co se sníh usazuje
+        label("Accumulate on", in: col, y: y, v: v)
+        let symbols = ["arrow.down.to.line", "dock.rectangle", "macwindow", "square.grid.2x2"]
+        let names = ["Ground", "Dock", "Windows", "Widgets"]
+        let seg = NSSegmentedControl()
+        seg.segmentCount = 4
+        seg.trackingMode = .selectAny
+        for i in 0..<4 {
+            if let img = NSImage(systemSymbolName: symbols[i], accessibilityDescription: names[i]) {
+                seg.setImage(img, forSegment: i)
+            } else {
+                seg.setLabel(names[i], forSegment: i)
+            }
+            seg.setToolTip(names[i], forSegment: i)
+            seg.setWidth(34, forSegment: i)
+        }
+        seg.setSelected(WeatherPrefs.onGround || rain, forSegment: 0)
+        seg.setSelected(WeatherPrefs.onDock, forSegment: 1)
+        seg.setSelected(WeatherPrefs.onWindows, forSegment: 2)
+        seg.setSelected(WeatherPrefs.onWidgets, forSegment: 3)
+        // déšť se nehromadí — dole šplíchá vždycky
+        seg.setEnabled(!rain, forSegment: 0)
+        seg.target = self
+        seg.action = #selector(weatherAccumulateChanged(_:))
+        seg.sizeToFit()
+        seg.frame = NSRect(x: col.x + col.w - seg.frame.width, y: y, width: seg.frame.width, height: 24)
+        v.addSubview(seg)
+        y -= step
+
+        let melt = switchRow(v, col: col, label: mode.meltTitle, y: y, action: #selector(toggleWeatherMelt(_:)))
+        melt.state = WeatherPrefs.melt ? .on : .off
+        melt.isEnabled = !rain
+        y -= step
+
+        let clear = NSButton(title: mode.clearTitle, target: self, action: #selector(clearWeather(_:)))
+        clear.bezelStyle = .rounded
+        clear.controlSize = .small
+        clear.font = .systemFont(ofSize: 11)
+        clear.isEnabled = !rain
+        clear.frame = NSRect(x: col.x + col.w - 110, y: y, width: 110, height: 24)
+        v.addSubview(clear)
+        y -= step + 4
+
+        let options: [(String, Bool, Selector, String)] = [
+            ("Deep interaction", WeatherPrefs.deepInteraction, #selector(toggleDeepInteraction(_:)),
+             "Snow also settles on a selection dragged across the desktop."),
+            ("Behind windows", WeatherPrefs.behindWindows, #selector(toggleBehindWindows(_:)),
+             "Draw the weather under your windows, on the desktop only."),
+            ("Show over full screen", WeatherPrefs.overFullScreen, #selector(toggleOverFullScreen(_:)),
+             "Keep it falling over full-screen apps."),
+            ("Show in screenshots", WeatherPrefs.showInScreenshots, #selector(toggleShowInScreenshots(_:)),
+             "Off: screenshots and screen sharing show your desktop without it."),
+            ("Max performance", WeatherPrefs.maxPerformance, #selector(toggleMaxPerformance(_:)),
+             "Draw at the display's full frame rate and resolution. Off: 20–30 fps at half resolution, which uses far less CPU and memory."),
+        ]
+        for (title, on, action, tip) in options {
+            let s = switchRow(v, col: col, label: title, y: y, action: action)
+            s.state = on ? .on : .off
+            s.toolTip = tip
+            y -= step
+        }
+    }
+
+    @objc private func toggleWeather(_ sender: NSSwitch) {
+        WeatherPrefs.enabled = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func weatherModeChanged(_ sender: NSPopUpButton) {
+        WeatherPrefs.mode = WeatherMode.allCases[max(0, sender.indexOfSelectedItem)]
+        WeatherController.shared.prefsChanged()
+        rebuild()  // popisky Melt/Clear a dostupnost voleb se mění s módem
+    }
+
+    @objc private func toggleHalloween(_ sender: NSSwitch) {
+        WeatherPrefs.halloween = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func weatherIntensityChanged(_ sender: NSPopUpButton) {
+        WeatherPrefs.intensity = WeatherIntensity.allCases[max(0, sender.indexOfSelectedItem)]
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func weatherOpacityChanged(_ sender: NSSlider) {
+        WeatherPrefs.opacity = sender.doubleValue
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func resetWeatherOpacity(_ sender: NSButton) {
+        UserDefaults.standard.removeObject(forKey: "weatherOpacity")
+        WeatherController.shared.prefsChanged()
+        rebuild()
+    }
+
+    @objc private func weatherAccumulateChanged(_ sender: NSSegmentedControl) {
+        if WeatherPrefs.mode != .rain { WeatherPrefs.onGround = sender.isSelected(forSegment: 0) }
+        WeatherPrefs.onDock = sender.isSelected(forSegment: 1)
+        WeatherPrefs.onWindows = sender.isSelected(forSegment: 2)
+        WeatherPrefs.onWidgets = sender.isSelected(forSegment: 3)
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func toggleWeatherMelt(_ sender: NSSwitch) {
+        WeatherPrefs.melt = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func clearWeather(_ sender: NSButton) {
+        WeatherController.shared.clear()
+    }
+
+    @objc private func toggleDeepInteraction(_ sender: NSSwitch) {
+        WeatherPrefs.deepInteraction = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func toggleBehindWindows(_ sender: NSSwitch) {
+        WeatherPrefs.behindWindows = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func toggleOverFullScreen(_ sender: NSSwitch) {
+        WeatherPrefs.overFullScreen = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func toggleShowInScreenshots(_ sender: NSSwitch) {
+        WeatherPrefs.showInScreenshots = sender.state == .on
+        WeatherController.shared.prefsChanged()
+    }
+
+    @objc private func toggleMaxPerformance(_ sender: NSSwitch) {
+        WeatherPrefs.maxPerformance = sender.state == .on
+        WeatherController.shared.prefsChanged()
     }
 
     /// Načte spend: čerstvou cache použije hned, jinak spustí přepočet na pozadí.

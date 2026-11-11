@@ -14,6 +14,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         island.setUp()
         MenuBarController.shared.start()
+        WeatherController.shared.start()
 
         monitor.onUpdate = { [weak self] sessions in
             self?.island.update(sessions: sessions)

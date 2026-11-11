@@ -124,7 +124,7 @@ vypnutá do dalšího přihlášení).
 - **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
   hotovo, deny). Defaultně vypnuté; zapnutí v nastavení.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
-- **Nastavení** (klik na appku nebo pravý klik na island; okno na šířku ve dvou
+- **Nastavení** (klik na appku nebo pravý klik na island; okno na šířku ve třech
   sloupcích, resizovatelné, pamatuje si velikost) — island on/off,
   velikost islandu (0.7–1.5×), velikost panelu (0.8–1.6×, rozbalený seznam),
   zvuky, tokeny a/nebo odhad spendu per session, kvóta v liště, druhá řádka
@@ -136,6 +136,34 @@ vypnutá do dalšího přihlášení).
   dokud si ho Claude Code neobnoví.
 - **Codex** — limit okna hlásí jen při přihlášení ChatGPT plánem; u API klíče
   to hlavička řekne místo „no data".
+- **Počasí na ploše** (Nastavení → Weather, defaultně vypnuté) — sníh,
+  podzimní listí, déšť nebo třešňový květ přes celou obrazovku, kreslené přes
+  Metal v průhledném overlayi, který propouští kliky:
+  - sníh se usazuje do závějí u spodního okraje obrazovky, na Docku a na
+    horních hranách oken, nad kterými je místo (i po zaoblených rozích),
+    a sesouvá se do přirozeného svahu; z listí a lístků jsou hromádky, na
+    kterých je poznat, z čeho jsou,
+  - kurzor závějí prorazí a rozpráší ji; tažené nebo zatřesené okno sníh
+    shodí, zavřené či minimalizované ho shodí najednou v hroudách, které se
+    při dopadu rozprsknou; při přepnutí Space zůstane sníh na okně,
+  - déšť šplíchá, prská na sklo pod hranami oken a stéká po něm v kapkách,
+    které se zastaví, posbírají kapičky a nechají mokrou stopu, visí pod
+    spodními hranami, než ukápnou, kurzor je rozmaže a zatřesené okno je
+    odhodí,
+  - Halloween (30. 10. – svítání 1. 11., jinak přepínačem): v závěji svítí
+    dýně a vylézají z ní duchové s cedulkami,
+  - volby: intenzita (Light / Steady / Heavy / Variable), průhlednost, kam
+    se usazuje (zem, Dock, okna, widgety na ploše), tání / usychání / vadnutí,
+    smazání, deep interaction (sníh na výběru taženém po ploše), za okny,
+    přes celoobrazovkové appky, viditelné na screenshotech (jinak je
+    screenshoty a sdílení obrazovky nevidí), max výkon,
+  - šetrné: když sněží, zhruba 2–3 % jednoho jádra CPU a ~60 MB (většina
+    paměti je celoobrazovková GPU plocha, kterou macOS potřebuje), vypnuté
+    nestojí nic. Při klidném sněžení kreslí 20 fps, když se něco hýbe rychle
+    (kurzor v závěji, tažené okno, déšť) 30 fps, v polovičním rozlišení —
+    Max performance zapne plnou frekvenci i rozlišení displeje. Pauza při
+    spánku displeje, zamčení, zakrytí a spořiči. Obrys Docku se čte přes
+    Accessibility (oprávnění už má kvůli Allow/Deny); bez něj se odhadne.
 
 ## Zdroje dat
 

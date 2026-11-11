@@ -126,8 +126,8 @@ until your next login).
 - **8-bit sounds** — synthesized square wave (start, permission, question,
   done, deny). Off by default; enable in settings.
 - **Non-activating overlay** — the panel never steals focus or activation.
-- **Settings** (click the app or right-click the island; landscape two-column
-  window, resizable, remembers its size) — island on/off,
+- **Settings** (click the app or right-click the island; landscape window in
+  three columns, resizable, remembers its size) — island on/off,
   island size (0.7–1.5×), panel size (0.8–1.6×, the expanded list), sounds,
   per-session tokens and/or spend estimate, quota in the bar, header second
   line (Codex limit from local session data / Fable 5 limit),
@@ -138,6 +138,36 @@ until your next login).
   every 30 s until Claude Code refreshes it.
 - **Codex** — limit windows are only reported when Codex is signed in with a
   ChatGPT plan; with an API key login the header says so instead of "no data".
+- **Weather on the desktop** (Settings → Weather, off by default) — snow,
+  autumn leaves, rain or cherry blossom over the whole screen, drawn with
+  Metal in a click-through overlay:
+  - snow settles into drifts along the bottom of the screen, on the Dock and
+    on the top edges of windows that have room above them (following their
+    rounded corners), and slumps to a natural slope; leaves and petals build
+    heaps you can tell are made of leaves and petals,
+  - the cursor plows through a drift and sprays it; dragging or shaking a
+    window sheds its snow, closing or minimizing one drops it in lumps that
+    burst on landing; switching Spaces keeps it with the window,
+  - rain splashes, spatters the glass under window edges and runs down it in
+    beads that stall, collect droplets and leave a wet trail, hang under
+    bottom edges until they drip, smear under the cursor and fly off a shaken
+    window,
+  - Halloween (Oct 30 – dawn Nov 1, or any day with the switch): jack-o'-lanterns
+    glow in the drift and ghosts with signs pop out of it,
+  - options: intensity (Light / Steady / Heavy / Variable), opacity, what it
+    settles on (ground, Dock, windows, desktop widgets), melt / wither / wilt,
+    clear, deep interaction (snow on a selection dragged across the desktop),
+    behind windows, over full-screen apps, visible in screenshots (hidden from
+    screenshots and screen sharing by default), max performance,
+  - light on resources: about 2–3 % of one CPU core and ~60 MB while it
+    snows (most of that memory is the full-screen GPU surface macOS needs),
+    nothing at all when it's off. It draws 20 fps while snow just falls and
+    30 fps when something moves fast (the cursor in a drift, a dragged window,
+    rain), at half resolution — Max performance switches to the display's
+    full rate and resolution. Pauses while the display sleeps, the screen is
+    locked or covered, or the screen saver runs. The Dock outline comes from
+    Accessibility (granted for Allow/Deny already); without it the Dock size
+    is estimated.
 
 ## Data sources
 
