@@ -173,6 +173,9 @@ Máš víc Claude účtů a k tomu Codex? Když jeden narazí na limit, pracuje�
   Nastavení → Accounts → Rotation → **Add current Claude Code login**.
   Opakuj pro každý účet. Codex se přidá sám, jakmile jsi přihlášený přes
   `codex login`.
+- **Přepínej přes `/login`, nikdy `/logout`** - `/logout` zneplatní login i na
+  straně Anthropicu, takže přestane fungovat i kopie, kterou si NotchOverlay pro
+  účet uložil. `/login` k jinému účtu předchozí login nechá platný.
 - **Pořadí** - šipkami ↑/↓ nastavíš prioritu. Výchozí stav - nejdřív všechny
   Claude účty, Codex nakonec.
 - **Zapnutá rotace** - když aktivní účet dosáhne prahu (výchozí 95 % 5h nebo

@@ -177,6 +177,9 @@ Got more than one Claude account, plus Codex? Keep working when one hits its lim
   Settings → Accounts → Rotation → **Add current Claude Code login**. Repeat
   for each account. Codex joins automatically once you're signed in with
   `codex login`.
+- **Switch with `/login`, never `/logout`** - `/logout` revokes the login on
+  Anthropic's side, so the copy NotchOverlay saved for that account stops working
+  too. `/login` with another account leaves the previous login valid.
 - **Pick the order** - ↑/↓ sets priority. By default every Claude account comes
   first and Codex last.
 - **Rotation on** - when the active account reaches the threshold (95% of the

@@ -50,6 +50,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.latestSessions.max(by: { $0.lastActivity < $1.lastActivity })?.cwd
         }
         rotation.onActiveQuota = { [weak self] state in self?.quota.onState?(state) }
+        rotation.onLoginChange = { [weak self] in self?.quota.credentialsChanged() }
         rotation.onChange = { [weak self] in
             self?.island.contentChanged()
             RotationWindowController.shared.refresh()

@@ -183,6 +183,13 @@ struct OAuthCreds {
         return String(data: d, encoding: .utf8)
     }
 
+    /// Jen login ({"claudeAiOauth": …}) — do slotu účtu. Ostatní klíče položky
+    /// Claude Code (mcpOAuth = tokeny MCP serverů) nepatří účtu a kopírovat se nemají.
+    var loginOnlyJSON: String? {
+        guard let d = try? JSONSerialization.data(withJSONObject: ["claudeAiOauth": oauth]) else { return nil }
+        return String(data: d, encoding: .utf8)
+    }
+
     /// Zachová ostatní pole (scopes, subscriptionType…), přepíše jen tokeny.
     mutating func update(access: String, refresh: String, expiresAt: Date) {
         var o = oauth
@@ -210,6 +217,10 @@ final class AccountRotation {
     var onActiveQuota: ((QuotaFetchState) -> Void)?
     /// Cokoli se změnilo (stav účtů, přepnutí) — UI se překreslí. Volá se na main.
     var onChange: (() -> Void)?
+    /// Claude Code přešel na jiný účet (přepnutí appkou nebo ruční /login) — běžný
+    /// fetcher kvót drží token předchozího účtu v cache a musí ho zahodit.
+    var onLoginChange: (() -> Void)?
+    private var loginResolved = false   // main
     /// Pracovní adresář poslední session — Codex se otevře tam.
     var latestCwd: (() -> String?)?
 
@@ -217,6 +228,9 @@ final class AccountRotation {
     private(set) var activeId: String?                    // main
     private(set) var currentTarget: String?               // main, "claude:<id>" / "codex" / nil = vše došlo
     private(set) var lastEvent: String?                   // main, poslední přepnutí pro UI
+    /// Účet, ke kterému je Claude Code přihlášený (z ~/.claude.json), obnovuje pollAll.
+    /// Island ho čte každou sekundu při hoveru — config má stovky KB, proto cache.
+    private(set) var currentLogin: (email: String?, uuid: String?) = (nil, nil)   // main
     /// Čte i quota queue (isPaused) — Bool, benigní race.
     private(set) var drivesQuota = false
 
@@ -261,7 +275,8 @@ final class AccountRotation {
     }
 
     private func captureCurrentLogin() -> String {
-        guard let raw = ClaudeCodeLogin.readCreds(), OAuthCreds(raw) != nil else {
+        guard let full = ClaudeCodeLogin.readCreds(), let creds = OAuthCreds(full),
+              let raw = creds.loginOnlyJSON else {
             return "Claude Code isn't logged in. Run /login in Claude Code first."
         }
         let oa = ClaudeCodeLogin.readOAuthAccount()
@@ -328,6 +343,8 @@ final class AccountRotation {
     private func pollAll() {
         let accounts = RotationPrefs.accounts
         let active = resolveActiveId(accounts)
+        let oa = ClaudeCodeLogin.readOAuthAccount()
+        let login = (email: oa?["emailAddress"] as? String, uuid: oa?["accountUuid"] as? String)
         var fresh: [String: Health] = [:]
         for a in accounts {
             fresh[a.id] = poll(a, isActive: a.id == active)
@@ -339,6 +356,10 @@ final class AccountRotation {
                 self.health[id] = h
             }
             self.activeId = active
+            let loginChanged = self.loginResolved && login.uuid != self.currentLogin.uuid
+            self.loginResolved = true
+            self.currentLogin = login
+            if loginChanged { self.onLoginChange?() }
             self.updateDrivesQuota()
             self.publishActive()
             self.decide()
@@ -481,9 +502,11 @@ final class AccountRotation {
     func claudeAvailable(_ id: String) -> Bool {
         switch health[id] ?? .unknown {
         case .ok(let q, _): return !Self.exhaustion(q, threshold: RotationPrefs.threshold).out
-        // Aktivní účet s prošlým tokenem necháváme; neověřený neaktivní nevolíme.
-        case .unknown: return id == activeId
-        case .needsLogin, .error: return false
+        // Aktivní účet necháváme i při prošlém tokenu nebo přechodné chybě (429, výpadek
+        // sítě) — jinak by jediný neúspěšný dotaz po startu přepnul zdravý účet.
+        // Neověřený nebo nedostupný neaktivní účet nevolíme.
+        case .unknown, .error: return id == activeId
+        case .needsLogin: return false
         }
     }
 
@@ -579,8 +602,8 @@ final class AccountRotation {
 
         if let active, let i = accounts.firstIndex(where: { $0.id == active }) {
             // Claude Code mohl token mezitím obnovit — rotovaný refresh token uložit zpět.
-            if let current = ClaudeCodeLogin.readCreds(), OAuthCreds(current) != nil {
-                Keychain.write(service: accounts[i].keychainService, account: "notch", value: current)
+            if let current = ClaudeCodeLogin.readCreds(), let login = OAuthCreds(current)?.loginOnlyJSON {
+                Keychain.write(service: accounts[i].keychainService, account: "notch", value: login)
             }
             if let oa = ClaudeCodeLogin.readOAuthAccount(),
                let d = try? JSONSerialization.data(withJSONObject: oa) {
@@ -599,7 +622,15 @@ final class AccountRotation {
         guard let raw = Keychain.read(service: target.keychainService) else {
             return "no saved login for \(target.label)"
         }
-        guard ClaudeCodeLogin.writeCreds(raw) else { return "couldn't write to the Claude Code Keychain item" }
+        guard let targetCreds = OAuthCreds(raw) else { return "the saved login for \(target.label) is damaged" }
+        var merged: [String: Any] = [:]
+        if let cur = ClaudeCodeLogin.readCreds(), let d = cur.data(using: .utf8),
+           let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { merged = obj }
+        merged["claudeAiOauth"] = targetCreds.oauth
+        guard let md = try? JSONSerialization.data(withJSONObject: merged),
+              let mergedJSON = String(data: md, encoding: .utf8),
+              ClaudeCodeLogin.writeCreds(mergedJSON)
+        else { return "couldn't write to the Claude Code Keychain item" }
         if let json = target.oauthAccountJSON, let d = json.data(using: .utf8),
            let oa = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
             ClaudeCodeLogin.writeOAuthAccount(oa)
@@ -714,3 +745,4 @@ final class AccountRotation {
         return base.count > 12 ? String(base.prefix(11)) + "…" : base
     }
 }
+
