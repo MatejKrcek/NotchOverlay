@@ -85,6 +85,15 @@ final class IslandController: NSObject {
     private var rowHeight: CGFloat { 46 * panelScale }
     private var headerHeight: CGFloat { (Display.headerSecondLine == "none" ? 26 : 42) * panelScale }
     private let maxVisibleRows = 8
+    /// Sekce přihlášených Claude účtů pod sessions (nastavení „Show all accounts").
+    private var accountRowHeight: CGFloat { 24 * panelScale }
+    private let maxAccountRows = 4
+    private var accountRows: [AccountRotation.UsageRow] {
+        Array(AccountRotation.shared.usageRows(current: quota).prefix(maxAccountRows))
+    }
+    private func accountsHeight(_ count: Int) -> CGFloat {
+        count == 0 ? 0 : 6 * panelScale + CGFloat(count) * accountRowHeight
+    }
     /// Paid: měřítko šířky islandu — roste jen do stran (křídla), výška je
     /// fixní podle notche.
     private var sizeScale: CGFloat {
@@ -208,7 +217,7 @@ final class IslandController: NSObject {
     }
     private var panelWidth: CGFloat { max(expandedWidth, compactWidth) + 8 }
     private var panelHeight: CGFloat {
-        topInset + headerHeight + CGFloat(maxVisibleRows) * rowHeight + 16
+        topInset + headerHeight + CGFloat(maxVisibleRows) * rowHeight + accountsHeight(maxAccountRows) + 16
     }
 
     private func rebuildForCurrentScreen() {
@@ -311,7 +320,7 @@ final class IslandController: NSObject {
     private var visibleRowCount: Int { min(max(1, sessions.count), maxVisibleRows) }
 
     private func expandedHeight() -> CGFloat {
-        topInset + headerHeight + CGFloat(visibleRowCount) * rowHeight + 12
+        topInset + headerHeight + CGFloat(visibleRowCount) * rowHeight + accountsHeight(accountRows.count) + 12
     }
 
     /// Frame islandu v souřadnicích root view (root NENÍ flipped — y odspodu),
@@ -438,6 +447,7 @@ final class IslandController: NSObject {
             listView.addSubview(header)
         }
 
+        var y = headerHeight
         if sessions.isEmpty {
             let empty = NSTextField(labelWithString: "No agents running")
             empty.font = .systemFont(ofSize: 13)
@@ -445,16 +455,100 @@ final class IslandController: NSObject {
             empty.alignment = .center
             empty.frame = NSRect(x: 0, y: headerHeight + 12, width: w, height: 20)
             listView.addSubview(empty)
-            return
+            y += rowHeight
+        } else {
+            for session in sessions.prefix(maxVisibleRows) {
+                let row = buildRow(session, width: w)
+                row.frame.origin = NSPoint(x: 8, y: y + 2)
+                listView.addSubview(row)
+                y += rowHeight
+            }
         }
 
-        var y = headerHeight
-        for session in sessions.prefix(maxVisibleRows) {
-            let row = buildRow(session, width: w)
-            row.frame.origin = NSPoint(x: 8, y: y + 2)
-            listView.addSubview(row)
-            y += rowHeight
+        // Přihlášené Claude účty: logo, e-mail, využití aktuálního 5h okna.
+        let accounts = accountRows
+        if !accounts.isEmpty {
+            y += 6 * panelScale
+            for account in accounts {
+                let row = buildAccountRow(account, width: w)
+                row.frame.origin = NSPoint(x: 8, y: y)
+                listView.addSubview(row)
+                y += accountRowHeight
+            }
         }
+    }
+
+    /// Řádek účtu: [logo] e-mail ……… [ukazatel 5h] 5h 2% · resets 4h 21m
+    private func buildAccountRow(_ a: AccountRotation.UsageRow, width: CGFloat) -> NSView {
+        let ps = panelScale
+        let h = accountRowHeight
+        let row = FlippedContainer(frame: NSRect(x: 0, y: 0, width: width - 16, height: h))
+        row.toolTip = a.tooltip
+        row.appearance = NSAppearance(named: .darkAqua)   // island je vždy černý, i ve světlém režimu
+        // Účet, ze kterého Claude Code čerpá (jeho 5h je v liště a menu baru) — podbarvený.
+        if a.active {
+            let bg = NSView(frame: row.bounds.insetBy(dx: 0, dy: 1))
+            bg.wantsLayer = true
+            bg.layer?.cornerRadius = 7 * ps
+            bg.layer?.backgroundColor = AccountBadge.tint.withAlphaComponent(0.13).cgColor
+            bg.layer?.borderWidth = 1
+            bg.layer?.borderColor = AccountBadge.tint.withAlphaComponent(0.35).cgColor
+            row.addSubview(bg)
+        }
+
+        let badgeSize = 15 * ps
+        let badge = NSImageView(frame: NSRect(x: 10, y: (h - badgeSize) / 2, width: badgeSize, height: badgeSize))
+        badge.image = AccountBadge.image(size: badgeSize, active: a.active)
+        row.addSubview(badge)
+
+        let textX = 10 + badgeSize + 9 * ps
+        let valueW = 150 * ps
+        let barW = 40 * ps
+        let valueX = row.frame.width - 8 - valueW
+        let barX = valueX - 8 * ps - barW
+
+        let name = NSTextField(labelWithString: a.label)
+        name.font = .systemFont(ofSize: 11.5 * ps, weight: a.active ? .semibold : .regular)
+        name.textColor = NSColor.white.withAlphaComponent(a.active ? 0.95 : 0.6)
+        name.lineBreakMode = .byTruncatingTail
+        let nameMax = max(40, barX - 8 * ps - textX)
+        if a.active {
+            // štítek IN USE hned za e-mailem; e-mail se zkrátí, když by se nevešel
+            let pill = AccountBadge.inUsePill(scale: ps)
+            let natural = (a.label as NSString).size(withAttributes: [.font: name.font as Any]).width
+            let nameW = min(ceil(natural) + 6, nameMax - pill.frame.width - 6)
+            name.frame = NSRect(x: textX, y: (h - 15 * ps) / 2, width: max(30, nameW), height: 15 * ps)
+            pill.frame.origin = NSPoint(x: name.frame.maxX + 6, y: (h - pill.frame.height) / 2)
+            row.addSubview(name)
+            row.addSubview(pill)
+        } else {
+            name.frame = NSRect(x: textX, y: (h - 15 * ps) / 2, width: nameMax, height: 15 * ps)
+            row.addSubview(name)
+        }
+
+        if let pct = a.fivePct {
+            let track = NSView(frame: NSRect(x: barX, y: (h - 4 * ps) / 2, width: barW, height: 4 * ps))
+            track.wantsLayer = true
+            track.layer?.cornerRadius = 2 * ps
+            track.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
+            let fill = NSView(frame: NSRect(x: 0, y: 0, width: barW * CGFloat(min(max(pct, 0), 100)) / 100,
+                                            height: 4 * ps))
+            fill.wantsLayer = true
+            fill.layer?.cornerRadius = 2 * ps
+            fill.layer?.backgroundColor = (a.warning ? NSColor.systemOrange
+                : a.active ? AccountBadge.tint : NSColor.white.withAlphaComponent(0.45)).cgColor
+            track.addSubview(fill)
+            row.addSubview(track)
+        }
+
+        let value = NSTextField(labelWithString: a.text)
+        value.font = .monospacedDigitSystemFont(ofSize: 10.5 * ps, weight: .regular)
+        value.textColor = a.warning ? .systemOrange : NSColor.white.withAlphaComponent(a.active ? 0.75 : 0.5)
+        value.alignment = .right
+        value.lineBreakMode = .byTruncatingTail
+        value.frame = NSRect(x: valueX, y: (h - 14 * ps) / 2, width: valueW, height: 14 * ps)
+        row.addSubview(value)
+        return row
     }
 
     private func buildRow(_ s: AgentSession, width: CGFloat) -> NSView {

@@ -746,3 +746,116 @@ final class AccountRotation {
     }
 }
 
+// MARK: - Přehled účtů pro nastavení
+
+extension AccountRotation {
+    /// Jeden přihlášený Claude účet v nastavení: e-mail, jestli na něm běží Claude Code,
+    /// a využití aktuálního 5h okna.
+    struct UsageRow {
+        let label: String
+        let active: Bool
+        let text: String
+        let warning: Bool
+        let tooltip: String
+        var fivePct: Int? = nil
+        /// Všechna okna účtu (5h, týden, Fable…) pro detailní přehled v nastavení.
+        var quota: QuotaStatus? = nil
+    }
+
+    /// Účty z rotace v pořadí priority. Když je Claude Code přihlášený k účtu mimo rotaci,
+    /// přidá i ten — s kvótami z běžného fetcheru (`current`).
+    func usageRows(current: QuotaStatus?, all: Bool = Display.showAllAccounts) -> [UsageRow] {
+        let rows = allUsageRows(current: current)
+        return all ? rows : Array(rows.filter(\.active).prefix(1))
+    }
+
+    private func allUsageRows(current: QuotaStatus?) -> [UsageRow] {
+        let accounts = RotationPrefs.accounts
+        var rows: [UsageRow] = []
+        for key in RotationPrefs.order where key != RotationPrefs.codexKey {
+            let id = String(key.dropFirst("claude:".count))
+            guard let a = accounts.first(where: { $0.id == id }) else { continue }
+            let active = id == activeId
+            // aktivní účet: stejná čísla jako hlavička islandu (běžný fetcher nebo rotace)
+            if active, let current {
+                rows.append(Self.usageRow(label: a.label, active: true, quota: current))
+                continue
+            }
+            switch health[id] ?? .unknown {
+            case .ok(let q, _):
+                rows.append(Self.usageRow(label: a.label, active: active, quota: q))
+            case .needsLogin:
+                rows.append(UsageRow(label: a.label, active: active, text: "login expired", warning: true,
+                                     tooltip: "Log in with this account in Claude Code (/login, not /logout), then add it again in Rotation."))
+            case .error(let e):
+                rows.append(UsageRow(label: a.label, active: active, text: "can't check", warning: true,
+                                     tooltip: "Couldn't load usage: \(e)"))
+            case .unknown:
+                rows.append(UsageRow(label: a.label, active: active, text: "checking…", warning: false,
+                                     tooltip: active ? "Waiting for Claude Code to refresh its token." : "Loading usage…"))
+            }
+        }
+        // Claude Code na účtu, který v rotaci není.
+        if let email = currentLogin.email {
+            let uuid = currentLogin.uuid
+            if !accounts.contains(where: { $0.accountUuid != nil && $0.accountUuid == uuid }) {
+                if let current {
+                    rows.insert(Self.usageRow(label: email, active: true, quota: current), at: 0)
+                } else {
+                    rows.insert(UsageRow(label: email, active: true, text: "checking…", warning: false,
+                                         tooltip: "Loading usage…"), at: 0)
+                }
+            }
+        }
+        return rows
+    }
+
+    /// „5h 12% · resets 3h 40m". Oranžově, když je účet nad prahem rotace
+    /// (5h nebo týden); týden se do textu přidá, jen když je on ten limit.
+    private static func usageRow(label: String, active: Bool, quota q: QuotaStatus) -> UsageRow {
+        let threshold = RotationPrefs.threshold
+        var text: String
+        if let f = q.fiveHour {
+            if let r = f.resetsAt, r <= Date() {
+                text = "5h new window"
+            } else {
+                text = "5h \(f.pct)%"
+                if let r = f.resetsAt { text += " · resets \(remainingString(until: r))" }
+            }
+        } else {
+            text = "5h no data"
+        }
+        if let w = q.sevenDay, w.pct >= threshold, (w.resetsAt ?? .distantFuture) > Date() {
+            text = (q.fiveHour.map { "5h \($0.pct)%" } ?? "5h –") + " · week \(w.pct)%"
+        }
+        var tip: [String] = []
+        if let f = q.fiveHour {
+            tip.append("5-hour window: \(f.pct)%" + (f.resetsAt.map { ", resets in \(remainingString(until: $0))" } ?? ""))
+        }
+        if let w = q.sevenDay {
+            tip.append("Weekly: \(w.pct)%" + (w.resetsAt.map { ", resets in \(remainingString(until: $0))" } ?? ""))
+        }
+        if active { tip.append("Claude Code is logged in with this account.") }
+        return UsageRow(label: label, active: active, text: text,
+                        warning: exhaustion(q, threshold: threshold).out,
+                        tooltip: tip.joined(separator: "\n"),
+                        fivePct: q.fiveHour.flatMap { f in (f.resetsAt ?? .distantFuture) > Date() ? f.pct : 0 },
+                        quota: q)
+    }
+
+    private static var lastOnDemandRefresh = Date.distantPast
+
+    /// Otevření nastavení: obnovit kvóty, když jsou starší než `maxAge`.
+    /// Nejvýš jednou za minutu — usage API při častém dotazování vrací 429.
+    func refreshIfStale(maxAge: TimeInterval = 120) {
+        let accounts = RotationPrefs.accounts
+        guard !accounts.isEmpty, Date().timeIntervalSince(Self.lastOnDemandRefresh) > 60 else { return }
+        let stale = accounts.contains { a in
+            if case .ok(_, let at) = health[a.id] ?? .unknown { return Date().timeIntervalSince(at) > maxAge }
+            return true
+        }
+        guard stale else { return }
+        Self.lastOnDemandRefresh = Date()
+        refreshNow()
+    }
+}

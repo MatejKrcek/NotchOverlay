@@ -126,12 +126,14 @@ until your next login).
 - **8-bit sounds** — synthesized square wave (start, permission, question,
   done, deny). Off by default; enable in settings.
 - **Non-activating overlay** — the panel never steals focus or activation.
-- **Settings** (click the app or right-click the island; landscape window in
-  three columns, resizable, remembers its size) — island on/off,
+- **Settings** (click the app or right-click the island; sections on the left -
+  General, Island, Accounts, Usage, Weather - and a short note under every
+  option; resizable, remembers its size and section) — island on/off,
   island size (0.7–1.5×), panel size (0.8–1.6×, the expanded list), sounds,
   per-session tokens and/or spend estimate, quota in the bar, header second
-  line (Codex limit from local session data / Fable 5 limit),
-  Claude/Codex/Gemini accounts with sign in/out, and Quit.
+  line (Codex limit from local session data / Fable 5 limit / account rotation),
+  Claude accounts with their 5-hour, weekly and Fable usage, Codex/Gemini
+  sign in/out, and Quit.
 - **Stale quota indicator** — the app reads the Claude Code OAuth token and
   never refreshes it itself (refresh tokens rotate). When that token expires,
   values are shown as `~12%` with a "stale" note and the Keychain is re-read
@@ -190,6 +192,10 @@ Got more than one Claude account, plus Codex? Keep working when one hits its lim
 - New Claude Code sessions use the new account. Restart sessions that were
   already running.
 - Second line → **Account rotation** shows every account at a glance in the island.
+- Settings → Accounts lists every account with its 5-hour, weekly and Fable
+  usage. The account Claude Code uses now is marked **IN USE**; its usage is the
+  one in the menu bar and next to the notch. The island shows the accounts under
+  your agents. **Show all accounts** off = only the account in use.
 
 ## Data sources
 

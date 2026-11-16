@@ -67,10 +67,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self.island.update(quotaState: state)
             MenuBarController.shared.update(quotaState: state)
             let before = self.claudeStatusLabel()
+            let beforeQuota = self.lastQuota
             self.quotaFetchState = state
             if case .ok(let status) = state { self.lastQuota = status }
-            // Otevřené nastavení ať hned ukáže nový stav účtu (např. po in-app loginu).
-            if self.claudeStatusLabel() != before { MainWindowController.shared.accountsChanged() }
+            // Otevřené nastavení ať hned ukáže nový stav účtu (např. po in-app loginu)
+            // i nové procento okna u přihlášeného účtu.
+            if self.claudeStatusLabel() != before || self.lastQuota != beforeQuota {
+                MainWindowController.shared.accountsChanged()
+            }
         }
         island.onSignInRequested = { [weak self] in
             LoginController.shared.onSuccess = {
@@ -104,6 +108,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainWindowController.shared.claudeStatus = { [weak self] in
             self?.claudeStatusLabel() ?? "checking…"
         }
+        MainWindowController.shared.currentQuota = { [weak self] in self?.lastQuota }
         if UserDefaults.standard.bool(forKey: "overlayHidden") {
             island.setVisible(false)
         }

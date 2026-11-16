@@ -124,12 +124,14 @@ vypnutá do dalšího přihlášení).
 - **8-bit zvuky** — syntetizovaná čtvercová vlna (start, permission, otázka,
   hotovo, deny). Defaultně vypnuté; zapnutí v nastavení.
 - **Non-activating overlay** — panel nikdy nesebere focus a nekrade aktivaci.
-- **Nastavení** (klik na appku nebo pravý klik na island; okno na šířku ve třech
-  sloupcích, resizovatelné, pamatuje si velikost) — island on/off,
+- **Nastavení** (klik na appku nebo pravý klik na island; vlevo sekce - General,
+  Island, Accounts, Usage, Weather - a pod každou volbou krátké vysvětlení;
+  resizovatelné, pamatuje si velikost i sekci) — island on/off,
   velikost islandu (0.7–1.5×), velikost panelu (0.8–1.6×, rozbalený seznam),
   zvuky, tokeny a/nebo odhad spendu per session, kvóta v liště, druhá řádka
-  hlavičky (Codex limit z lokálních session dat / Fable 5 limit), účty
-  Claude/Codex/Gemini se sign in/out a Quit.
+  hlavičky (Codex limit z lokálních session dat / Fable 5 limit / rotace účtů),
+  Claude účty s využitím 5h, týdenního a Fable limitu, Codex/Gemini se
+  sign in/out a Quit.
 - **Indikace neaktuální kvóty** — appka čte OAuth token Claude Code a sama ho
   nikdy neobnovuje (refresh tokeny rotují). Když token prošel, hodnoty se
   ukazují jako `~12%` s poznámkou „stale" a Keychain se čte každých 30 s,
@@ -185,6 +187,10 @@ Máš víc Claude účtů a k tomu Codex? Když jeden narazí na limit, pracuje�
   limitu se Claude Code vrátí na účet s vyšší prioritou.
 - Nový účet používají nové Claude Code sessions. Běžící sessions restartuj.
 - Second line → **Account rotation** ukáže v islandu všechny účty najednou.
+- Nastavení → Accounts ukáže každý účet s využitím 5h, týdenního a Fable limitu.
+  Účet, ze kterého Claude Code právě čerpá, má štítek **IN USE** - jeho využití
+  vidíš v menu baru a vedle notche. Island ukáže účty pod agenty. Vypnuté
+  **Show all accounts** = jen účet, který se právě používá.
 
 ## Zdroje dat
 
