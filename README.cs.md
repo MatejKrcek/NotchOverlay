@@ -165,6 +165,24 @@ vypnutá do dalšího přihlášení).
     spánku displeje, zamčení, zakrytí a spořiči. Obrys Docku se čte přes
     Accessibility (oprávnění už má kvůli Allow/Deny); bez něj se odhadne.
 
+## Rotace účtů
+
+Máš víc Claude účtů a k tomu Codex? Když jeden narazí na limit, pracuješ dál.
+
+- **Přidání účtů** - v Claude Code se přihlas `/login` k účtu, pak
+  Nastavení → Accounts → Rotation → **Add current Claude Code login**.
+  Opakuj pro každý účet. Codex se přidá sám, jakmile jsi přihlášený přes
+  `codex login`.
+- **Pořadí** - šipkami ↑/↓ nastavíš prioritu. Výchozí stav - nejdřív všechny
+  Claude účty, Codex nakonec.
+- **Zapnutá rotace** - když aktivní účet dosáhne prahu (výchozí 95 % 5h nebo
+  týdenního okna), NotchOverlay přepne Claude Code na další účet, který má
+  ještě rezervu. Když dojdou všechny Claude účty, přijde notifikace, nebo se
+  podle nastavení otevře Codex v Terminálu v posledním projektu. Po resetu
+  limitu se Claude Code vrátí na účet s vyšší prioritou.
+- Nový účet používají nové Claude Code sessions. Běžící sessions restartuj.
+- Second line → **Account rotation** ukáže v islandu všechny účty najednou.
+
 ## Zdroje dat
 
 1. **Pasivně**: tail transkriptů `~/.claude/projects/**/*.jsonl` každých 1,5 s

@@ -38,6 +38,9 @@ enum QuotaFetchState: Equatable {
 ///    zapíšeme zpět do Keychain, ať další refresh po 8 h neselže.
 final class QuotaFetcher {
     var onState: ((QuotaFetchState) -> Void)?
+    /// Když vrací true, kvóty dodává rotace účtů (AccountRotation) a tenhle
+    /// fetcher stojí — jinak by island přepisovaly dva zdroje.
+    var isPaused: (() -> Bool)?
 
     private let queue = DispatchQueue(label: "quota-fetch", qos: .utility)
     private var timer: DispatchSourceTimer?
@@ -91,6 +94,7 @@ final class QuotaFetcher {
     }
 
     private func fetch() {
+        if isPaused?() == true { return }
         guard Date() >= backoffUntil else {
             push(.rateLimited(until: backoffUntil))
             return
@@ -142,13 +146,7 @@ final class QuotaFetcher {
                 self.debug("parse: není JSON objekt")
                 return
             }
-            var q = QuotaStatus()
-            q.fiveHour = Self.window(in: obj, keys: ["five_hour", "5h", "session"])
-            q.sevenDay = Self.window(in: obj, keys: ["seven_day", "7d", "week", "weekly"])
-            q.sevenDayOpus = Self.window(in: obj, keys: ["seven_day_opus", "seven_day_sonnet"])
-            q.sevenDayFable = Self.window(in: obj, keys: ["seven_day_fable", "seven_day_mythos", "fable_weekly", "fable"])
-                ?? Self.scopedLimit(in: obj, modelName: "fable")
-            if q.fiveHour != nil || q.sevenDay != nil { result = q }
+            if let q = Self.parseUsage(obj) { result = q }
             else { self.debug("v odpovědi nejsou známá okna; dump: \(String(data: data, encoding: .utf8)?.prefix(500) ?? "")") }
         }.resume()
         sem.wait()
@@ -172,6 +170,17 @@ final class QuotaFetcher {
             staleSince = nil
             timer?.schedule(deadline: .now() + interval, repeating: interval)
         }
+    }
+
+    /// Odpověď /api/oauth/usage → QuotaStatus (sdílí i rotace účtů). nil = žádné známé okno.
+    static func parseUsage(_ obj: [String: Any]) -> QuotaStatus? {
+        var q = QuotaStatus()
+        q.fiveHour = window(in: obj, keys: ["five_hour", "5h", "session"])
+        q.sevenDay = window(in: obj, keys: ["seven_day", "7d", "week", "weekly"])
+        q.sevenDayOpus = window(in: obj, keys: ["seven_day_opus", "seven_day_sonnet"])
+        q.sevenDayFable = window(in: obj, keys: ["seven_day_fable", "seven_day_mythos", "fable_weekly", "fable"])
+            ?? scopedLimit(in: obj, modelName: "fable")
+        return (q.fiveHour != nil || q.sevenDay != nil) ? q : nil
     }
 
     /// Model-scoped limit z pole `limits` (weekly_scoped se scope.model

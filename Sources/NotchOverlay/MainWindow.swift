@@ -243,8 +243,8 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                                 action: #selector(toggleQuota(_:))); y -= rowStep
         popupRow(v, col: left, label: "Second line", y: y,
                  items: [("None", true), ("Codex", true), ("Fable 5", true),
-                         ("Gemini (soon)", false)],
-                 selected: ["none", "codex", "fable", "gemini"].firstIndex(of: Display.headerSecondLine) ?? 0,
+                         ("Gemini (soon)", false), ("Account rotation", true)],
+                 selected: ["none", "codex", "fable", "gemini", "rotation"].firstIndex(of: Display.headerSecondLine) ?? 0,
                  action: #selector(secondLineChanged(_:))); y -= rowStep
         menuBarSwitch = switchRow(v, col: left, label: "5h session in menu bar", y: y,
                                   action: #selector(toggleMenuBar(_:))); y -= rowStep
@@ -290,6 +290,13 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                    buttonTitle: !gemini.installed ? nil : (gemini.signedIn ? "Sign out" : "Sign in…"),
                    action: !gemini.installed ? nil
                          : (gemini.signedIn ? #selector(signOutGemini(_:)) : #selector(signInGemini(_:))))
+        y -= 30
+        let rotationCount = RotationPrefs.accounts.count
+        let rotationStatus = rotationCount == 0 ? "off · no accounts"
+            : "\(RotationPrefs.enabled ? "on" : "off") · \(rotationCount) Claude + Codex"
+        accountRow(v, col: right, name: "Rotation", status: rotationStatus, y: y,
+                   buttonTitle: "Set up…", action: #selector(openRotation(_:)),
+                   tooltip: "Use several Claude accounts one after another, then Codex when they're all used up.")
 
         // Quit dole vpravo — ukotvený ke spodní hraně okna.
         let quitY = margin
@@ -540,7 +547,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     }
 
     @objc private func secondLineChanged(_ sender: NSPopUpButton) {
-        Display.headerSecondLine = ["none", "codex", "fable", "gemini"][max(0, sender.indexOfSelectedItem)]
+        Display.headerSecondLine = ["none", "codex", "fable", "gemini", "rotation"][max(0, sender.indexOfSelectedItem)]
         onSizeChange?()
     }
 
@@ -571,6 +578,10 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     @objc private func signIn(_ sender: NSButton) {
         onSignIn?()
+    }
+
+    @objc private func openRotation(_ sender: NSButton) {
+        RotationWindowController.shared.present()
     }
 
     @objc private func signInCodex(_ sender: NSButton) {

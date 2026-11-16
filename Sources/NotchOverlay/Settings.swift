@@ -125,6 +125,14 @@ enum Providers {
         UserDefaults.standard.set(true, forKey: "claudeSignedOut")
     }
 
+    /// Otevře Terminál s libovolným shell příkazem; uvozovky a zpětná lomítka
+    /// escapuje pro AppleScript string.
+    static func openTerminal(command: String) {
+        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        openLogin(command: escaped)
+    }
+
     /// Otevře Terminál s login příkazem CLI (vyžaduje Automation oprávnění).
     static func openLogin(command: String) {
         let script = "tell application \"Terminal\"\nactivate\ndo script \"\(command)\"\nend tell"

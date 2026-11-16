@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let quota = QuotaFetcher()
     private var lastQuota: QuotaStatus?
     private var quotaFetchState: QuotaFetchState = .starting
+    private var latestSessions: [AgentSession] = []
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -17,6 +18,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         WeatherController.shared.start()
 
         monitor.onUpdate = { [weak self] sessions in
+            self?.latestSessions = sessions
             self?.island.update(sessions: sessions)
             Self.dumpState(sessions, quota: self?.lastQuota)
         }
@@ -40,6 +42,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hooks.onEvent = { [weak self] sessionId, state, term, ended in
             self?.monitor.applyHookEvent(sessionId: sessionId, state: state, termProgram: term, ended: ended)
         }
+        // Rotace účtů: když je zapnutá a ví, který účet má Claude Code, kvóty
+        // v islandu/menu baru dodává ona (pro aktivní účet) a QuotaFetcher stojí.
+        let rotation = AccountRotation.shared
+        quota.isPaused = { rotation.drivesQuota }
+        rotation.latestCwd = { [weak self] in
+            self?.latestSessions.max(by: { $0.lastActivity < $1.lastActivity })?.cwd
+        }
+        rotation.onActiveQuota = { [weak self] state in self?.quota.onState?(state) }
+        rotation.onChange = { [weak self] in
+            self?.island.contentChanged()
+            RotationWindowController.shared.refresh()
+            MainWindowController.shared.accountsChanged()
+        }
+        RotationWindowController.shared.onEnabledChange = { [weak self] in
+            self?.island.sizeChanged()  // druhá řádka hlavičky se mohla zapnout
+            // vypnutá rotace → hned zpátky na běžný fetch kvót
+            if !rotation.drivesQuota { self?.quota.credentialsChanged() }
+        }
+
         quota.onState = { [weak self] state in
             guard let self else { return }
             self.island.update(quotaState: state)
@@ -90,6 +111,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         usage.start()
         hooks.start()
         quota.start()
+        rotation.start()
 
         // LaunchAgent startuje s --agent (bez okna); ruční spuštění okno ukáže.
         if !CommandLine.arguments.contains("--agent") {

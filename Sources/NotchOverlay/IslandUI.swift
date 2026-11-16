@@ -305,6 +305,9 @@ final class IslandController: NSObject {
         rebuildForCurrentScreen()
     }
 
+    /// Změnil se obsah mimo sessions/kvóty (např. stav rotace účtů) — překreslit.
+    func contentChanged() { render() }
+
     private var visibleRowCount: Int { min(max(1, sessions.count), maxVisibleRows) }
 
     private func expandedHeight() -> CGFloat {
@@ -592,6 +595,11 @@ final class IslandController: NSObject {
             return parts.joined(separator: " · ")
         }
         var parts: [String] = []
+        // S rotací kvóty patří aktivnímu účtu — říct kterému.
+        if AccountRotation.shared.drivesQuota, let id = AccountRotation.shared.activeId,
+           let name = AccountRotation.shared.label(for: id) {
+            parts.append(name.split(separator: "@").first.map(String.init) ?? name)
+        }
         if let fh = quota.fiveHour {
             var s = "5h: \(fh.pct)%"
             if let r = fh.resetsAt { s += " · resets in \(remainingString(until: r))" }
@@ -629,6 +637,8 @@ final class IslandController: NSObject {
             return s
         case "gemini":
             return "gemini: no data"
+        case "rotation":
+            return AccountRotation.shared.summaryLine()
         default:
             return ""
         }

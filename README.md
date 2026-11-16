@@ -169,6 +169,25 @@ until your next login).
     Accessibility (granted for Allow/Deny already); without it the Dock size
     is estimated.
 
+## Account rotation
+
+Got more than one Claude account, plus Codex? Keep working when one hits its limit.
+
+- **Add your accounts** - run `/login` in Claude Code with an account, then
+  Settings → Accounts → Rotation → **Add current Claude Code login**. Repeat
+  for each account. Codex joins automatically once you're signed in with
+  `codex login`.
+- **Pick the order** - ↑/↓ sets priority. By default every Claude account comes
+  first and Codex last.
+- **Rotation on** - when the active account reaches the threshold (95% of the
+  5-hour or weekly window by default), NotchOverlay switches Claude Code to the
+  next account with room left. When every Claude account is out, you get a
+  notification, or Codex opens in Terminal in your latest project if you
+  choose that. When a higher-priority account resets, Claude Code goes back to it.
+- New Claude Code sessions use the new account. Restart sessions that were
+  already running.
+- Second line → **Account rotation** shows every account at a glance in the island.
+
 ## Data sources
 
 1. **Passive**: tailing transcripts `~/.claude/projects/**/*.jsonl` every

@@ -305,7 +305,8 @@ final class SessionMonitor {
             state: state,
             lastActivity: st.lastTimestamp ?? mtime,
             termProgram: nil,
-            transcriptPath: path
+            transcriptPath: path,
+            cwd: st.cwd
         )
     }
 
