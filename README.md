@@ -126,12 +126,14 @@ until your next login).
 - **8-bit sounds** — synthesized square wave (start, permission, question,
   done, deny). Off by default; enable in settings.
 - **Non-activating overlay** — the panel never steals focus or activation.
-- **Settings** (click the app or right-click the island; landscape window in
-  three columns, resizable, remembers its size) — island on/off,
+- **Settings** (click the app or right-click the island; sections on the left -
+  General, Island, Accounts, Usage, Weather - and a short note under every
+  option; resizable, remembers its size and section) — island on/off,
   island size (0.7–1.5×), panel size (0.8–1.6×, the expanded list), sounds,
   per-session tokens and/or spend estimate, quota in the bar, header second
-  line (Codex limit from local session data / Fable 5 limit),
-  Claude/Codex/Gemini accounts with sign in/out, and Quit.
+  line (Codex limit from local session data / Fable 5 limit / account rotation),
+  Claude accounts with their 5-hour, weekly and Fable usage, Codex/Gemini
+  sign in/out, and Quit.
 - **Stale quota indicator** — the app reads the Claude Code OAuth token and
   never refreshes it itself (refresh tokens rotate). When that token expires,
   values are shown as `~12%` with a "stale" note and the Keychain is re-read
@@ -168,6 +170,32 @@ until your next login).
     locked or covered, or the screen saver runs. The Dock outline comes from
     Accessibility (granted for Allow/Deny already); without it the Dock size
     is estimated.
+
+## Account rotation
+
+Got more than one Claude account, plus Codex? Keep working when one hits its limit.
+
+- **Add your accounts** - run `/login` in Claude Code with an account, then
+  Settings → Accounts → Rotation → **Add current Claude Code login**. Repeat
+  for each account. Codex joins automatically once you're signed in with
+  `codex login`.
+- **Switch with `/login`, never `/logout`** - `/logout` revokes the login on
+  Anthropic's side, so the copy NotchOverlay saved for that account stops working
+  too. `/login` with another account leaves the previous login valid.
+- **Pick the order** - ↑/↓ sets priority. By default every Claude account comes
+  first and Codex last.
+- **Rotation on** - when the active account reaches the threshold (95% of the
+  5-hour or weekly window by default), NotchOverlay switches Claude Code to the
+  next account with room left. When every Claude account is out, you get a
+  notification, or Codex opens in Terminal in your latest project if you
+  choose that. When a higher-priority account resets, Claude Code goes back to it.
+- New Claude Code sessions use the new account. Restart sessions that were
+  already running.
+- Second line → **Account rotation** shows every account at a glance in the island.
+- Settings → Accounts lists every account with its 5-hour, weekly and Fable
+  usage. The account Claude Code uses now is marked **IN USE**; its usage is the
+  one in the menu bar and next to the notch. The island shows the accounts under
+  your agents. **Show all accounts** off = only the account in use.
 
 ## Data sources
 

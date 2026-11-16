@@ -12,6 +12,12 @@ enum Display {
         get { !UserDefaults.standard.bool(forKey: "hideSessionSpend") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideSessionSpend") }
     }
+    /// Účty v nastavení a v rozbaleném islandu: vypnuto = jen účet, na kterém je
+    /// Claude Code; zapnuto (výchozí) = všechny přidané účty s využitím jejich 5h okna.
+    static var showAllAccounts: Bool {
+        get { UserDefaults.standard.object(forKey: "showAllAccounts") as? Bool ?? true }
+        set { UserDefaults.standard.set(newValue, forKey: "showAllAccounts") }
+    }
     static var showQuotaInBar: Bool {
         get { !UserDefaults.standard.bool(forKey: "hideQuotaBar") }
         set { UserDefaults.standard.set(!newValue, forKey: "hideQuotaBar") }
@@ -123,6 +129,14 @@ enum Providers {
         try? p.run()
         p.waitUntilExit()
         UserDefaults.standard.set(true, forKey: "claudeSignedOut")
+    }
+
+    /// Otevře Terminál s libovolným shell příkazem; uvozovky a zpětná lomítka
+    /// escapuje pro AppleScript string.
+    static func openTerminal(command: String) {
+        let escaped = command.replacingOccurrences(of: "\\", with: "\\\\")
+            .replacingOccurrences(of: "\"", with: "\\\"")
+        openLogin(command: escaped)
     }
 
     /// Otevře Terminál s login příkazem CLI (vyžaduje Automation oprávnění).

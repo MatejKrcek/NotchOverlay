@@ -35,6 +35,8 @@ struct AgentSession: Equatable {
     var lastActivity: Date
     var termProgram: String? // TERM_PROGRAM z hook eventu, pro jump
     var transcriptPath: String
+    /// Plná cesta pracovního adresáře — rotace do Codexu ho otevírá tady.
+    var cwd: String? = nil
 }
 
 struct UsageSummary: Equatable {
