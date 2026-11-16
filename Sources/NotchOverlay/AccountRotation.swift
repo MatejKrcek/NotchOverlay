@@ -158,7 +158,12 @@ enum ClaudeCodeLogin {
         guard let data = try? JSONSerialization.data(
             withJSONObject: cfg, options: [.prettyPrinted, .withoutEscapingSlashes])
         else { return false }
-        return (try? data.write(to: URL(fileURLWithPath: configPath), options: .atomic)) != nil
+        // Symlink (dotfiles) nepřepsat obyčejným souborem; oprávnění (0600) zachovat.
+        let url = URL(fileURLWithPath: configPath).resolvingSymlinksInPath()
+        let perms = (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions]
+        guard (try? data.write(to: url, options: .atomic)) != nil else { return false }
+        if let perms { try? FileManager.default.setAttributes([.posixPermissions: perms], ofItemAtPath: url.path) }
+        return true
     }
 }
 
@@ -226,7 +231,19 @@ final class AccountRotation {
 
     private(set) var health: [String: Health] = [:]       // main
     private(set) var activeId: String?                    // main
-    private(set) var currentTarget: String?               // main, "claude:<id>" / "codex" / nil = vše došlo
+    /// main, "claude:<id>" / "codex" / nil = vše došlo. Přežije restart, ať se předání
+    /// Codexu (notifikace / Terminál) neopakuje při každém spuštění appky.
+    private(set) var currentTarget: String? = UserDefaults.standard.string(forKey: "rotationCurrentTarget") {
+        didSet { UserDefaults.standard.set(currentTarget, forKey: "rotationCurrentTarget") }
+    }
+    /// Účet zvolený ručně tlačítkem Use — rotace na něm zůstane, dokud nedojde (main).
+    private var pinnedId: String? = UserDefaults.standard.string(forKey: "rotationPinnedId") {
+        didSet { UserDefaults.standard.set(pinnedId, forKey: "rotationPinnedId") }
+    }
+    /// Před prvním pollem nejsou kvóty ani aktivní účet známé — nerozhodovat (main).
+    private var polledOnce = false
+    /// Token aktivního účtu prošel a čeká se, až ho Claude Code obnoví (main).
+    private var activeStale = false
     private(set) var lastEvent: String?                   // main, poslední přepnutí pro UI
     /// Účet, ke kterému je Claude Code přihlášený (z ~/.claude.json), obnovuje pollAll.
     /// Island ho čte každou sekundu při hoveru — config má stovky KB, proto cache.
@@ -239,7 +256,16 @@ final class AccountRotation {
     private let interval: TimeInterval = 300
     private let clientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private var switching = false   // main
-    private var notifiedAllOut = false
+    /// Upozornění „všechny účty došly" jen jednou — i přes restart appky.
+    private var notifiedAllOut = UserDefaults.standard.bool(forKey: "rotationNotifiedAllOut") {
+        didSet { UserDefaults.standard.set(notifiedAllOut, forKey: "rotationNotifiedAllOut") }
+    }
+    /// Po dočasné chybě přepnutí (síť) další pokus nejdřív za 5 min (main).
+    private var switchRetryAfter = Date.distantPast
+    /// Systémové upozornění na dočasnou chybu přepnutí nejvýš jednou za hodinu (main).
+    private var lastTransientNotice = Date.distantPast
+    /// Běží 30s hlídání, jestli Claude Code obnovil prošlý token aktivního účtu (main).
+    private var watchingToken = false
 
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
@@ -280,13 +306,17 @@ final class AccountRotation {
             return "Claude Code isn't logged in. Run /login in Claude Code first."
         }
         let oa = ClaudeCodeLogin.readOAuthAccount()
-        let uuid = oa?["accountUuid"] as? String
+        // Bez accountUuid by appka nepoznala, kdy je účet aktivní, a obnovovala by
+        // token, který patří Claude Code (= odhlášení Claude Code).
+        guard let uuid = oa?["accountUuid"] as? String else {
+            return "Couldn't tell which account Claude Code uses (no account info in ~/.claude.json). Start Claude Code once and try again."
+        }
         let email = oa?["emailAddress"] as? String
         let oaJSON = oa.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
             .flatMap { String(data: $0, encoding: .utf8) }
 
         var accounts = RotationPrefs.accounts
-        if let uuid, let i = accounts.firstIndex(where: { $0.accountUuid == uuid }) {
+        if let i = accounts.firstIndex(where: { $0.accountUuid == uuid }) {
             Keychain.write(service: accounts[i].keychainService, account: "notch", value: raw)
             accounts[i].oauthAccountJSON = oaJSON ?? accounts[i].oauthAccountJSON
             RotationPrefs.accounts = accounts
@@ -329,12 +359,21 @@ final class AccountRotation {
         guard j >= 0, j < o.count else { return }
         o.swapAt(i, j)
         RotationPrefs.order = o
+        pinnedId = nil   // nové pořadí = uživatel chce prioritu, ne ruční volbu
         settingsChanged()
     }
 
     /// Ruční přepnutí (tlačítko „Use").
     func use(id: String) {
         guard let acct = RotationPrefs.accounts.first(where: { $0.id == id }) else { return }
+        guard !switching else {
+            lastEvent = "Another switch is still running. Try again in a moment."
+            onChange?()
+            return
+        }
+        // Se zapnutou rotací by decide() hned vrátil účet s vyšší prioritou — ručně
+        // zvolený účet proto platí, dokud nedojde.
+        if RotationPrefs.enabled { pinnedId = id }
         performSwitch(to: acct, reason: "switched manually")
     }
 
@@ -356,6 +395,9 @@ final class AccountRotation {
                 self.health[id] = h
             }
             self.activeId = active
+            self.polledOnce = true
+            self.activeStale = active.map { fresh[$0] == .unknown } ?? false
+            if self.activeStale { self.watchActiveToken() }
             let loginChanged = self.loginResolved && login.uuid != self.currentLogin.uuid
             self.loginResolved = true
             self.currentLogin = login
@@ -387,12 +429,14 @@ final class AccountRotation {
     }
 
     private func poll(_ a: ClaudeAccount, isActive: Bool) -> Health {
+        guard a.accountUuid != nil else { return .needsLogin }   // starý záznam bez identity
         let token: String
         if isActive {
             // Token Claude Code jen čteme. Prošlý = Claude Code ho obnoví při dalším použití.
             guard let raw = ClaudeCodeLogin.readCreds(), let c = OAuthCreds(raw), let t = c.access
             else { return .unknown }
             if let e = c.expiresAt, e.timeIntervalSinceNow < 60 { return .unknown }
+            syncActiveSlot(a, creds: c)
             token = t
         } else {
             switch ownedToken(a) {
@@ -402,6 +446,58 @@ final class AccountRotation {
             }
         }
         return fetchUsage(token: token)
+    }
+
+    /// Claude Code token aktivního účtu mezitím obnovil (refresh token se tím rotuje) —
+    /// nový login uložit do slotu. Jinak by po ručním /login k jinému účtu zůstal
+    /// ve slotu mrtvý token a účet by skončil jako „login expired".
+    /// Identitu ověří /api/oauth/profile: během /login už může Keychain patřit jinému
+    /// účtu, zatímco ~/.claude.json ještě ukazuje ten předchozí.
+    /// true = slot drží aktuální login účtu (už předtím, nebo právě uložený po ověření).
+    @discardableResult
+    private func syncActiveSlot(_ a: ClaudeAccount, creds c: OAuthCreds) -> Bool {
+        guard let refresh = c.refresh, let access = c.access, let uuid = a.accountUuid else { return false }
+        let stored = Keychain.read(service: a.keychainService).flatMap { OAuthCreds($0) }
+        if stored?.refresh == refresh { return true }
+        guard profileUuid(token: access) == uuid, let login = c.loginOnlyJSON else { return false }
+        return Keychain.write(service: a.keychainService, account: "notch", value: login)
+    }
+
+    /// Prošlý token aktivního účtu: každých 30 s se podívat, jestli ho Claude Code obnovil,
+    /// a pak hned načíst kvóty (jinak by island čekal až na další 5min poll).
+    private func watchActiveToken() {
+        guard !watchingToken else { return }
+        watchingToken = true
+        queue.asyncAfter(deadline: .now() + 30) { [weak self] in
+            guard let self else { return }
+            let creds = ClaudeCodeLogin.readCreds().flatMap { OAuthCreds($0) }
+            let renewed = creds?.access != nil && (creds?.expiresAt.map { $0.timeIntervalSinceNow > 60 } ?? false)
+            DispatchQueue.main.async {
+                self.watchingToken = false
+                guard self.activeStale else { return }
+                if renewed { self.refreshNow() } else { self.watchActiveToken() }
+            }
+        }
+    }
+
+    /// UUID účtu, kterému patří access token (nil = nevíme: síť, 401, neznámá odpověď).
+    private func profileUuid(token: String) -> String? {
+        var req = URLRequest(url: URL(string: "https://api.anthropic.com/api/oauth/profile")!)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("oauth-2025-04-20", forHTTPHeaderField: "anthropic-beta")
+        req.timeoutInterval = 10
+        let sem = DispatchSemaphore(value: 0)
+        var uuid: String?
+        URLSession.shared.dataTask(with: req) { data, resp, _ in
+            defer { sem.signal() }
+            guard (resp as? HTTPURLResponse)?.statusCode == 200, let data,
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  let account = obj["account"] as? [String: Any]
+            else { return }
+            uuid = account["uuid"] as? String
+        }.resume()
+        sem.wait()
+        return uuid
     }
 
     /// Platný access token neaktivního účtu (obnoví ho, když prošel).
@@ -479,7 +575,7 @@ final class AccountRotation {
     private func publishActive() {
         guard drivesQuota, let id = activeId else { return }
         switch health[id] ?? .unknown {
-        case .ok(let q, _): onActiveQuota?(.ok(q))
+        case .ok(let q, let at): onActiveQuota?(activeStale ? .stale(since: at) : .ok(q))
         case .needsLogin: onActiveQuota?(.signedOut)
         default: break
         }
@@ -520,7 +616,23 @@ final class AccountRotation {
     }
 
     private func decide() {
-        guard RotationPrefs.enabled, !switching, !RotationPrefs.accounts.isEmpty else { return }
+        guard RotationPrefs.enabled, !RotationPrefs.accounts.isEmpty else {
+            currentTarget = nil
+            pinnedId = nil
+            return
+        }
+        guard !switching, polledOnce else { return }
+        // Claude Code je přihlášený k účtu mimo rotaci (ruční /login, odebraný účet) —
+        // to je volba uživatele, rotace na ni nesahá.
+        guard activeId != nil else { currentTarget = nil; return }
+        if let pin = pinnedId {
+            if pin == activeId, claudeAvailable(pin) {
+                currentTarget = "claude:\(pin)"
+                notifiedAllOut = false
+                return
+            }
+            pinnedId = nil   // ručně zvolený účet došel → zpět na pořadí priority
+        }
         let accounts = RotationPrefs.accounts
         var target: String?
         for key in RotationPrefs.order {
@@ -558,6 +670,10 @@ final class AccountRotation {
         }
         let id = String(target.dropFirst("claude:".count))
         if id != activeId, let acct = accounts.first(where: { $0.id == id }) {
+            guard Date() >= switchRetryAfter else {
+                currentTarget = previous   // po dočasné chybě přepnutí ještě čekáme
+                return
+            }
             let reason = previous == RotationPrefs.codexKey ? "Claude limit reset" : "previous account hit its limit"
             performSwitch(to: acct, reason: reason)
         } else if previous == RotationPrefs.codexKey {
@@ -578,11 +694,25 @@ final class AccountRotation {
             DispatchQueue.main.async {
                 self.switching = false
                 if let error {
-                    self.lastEvent = "Switch to \(target.label) failed: \(error)"
-                    self.notify("Account switch failed", body: error)
-                    // účet vyřadit, ať decide() nezkouší pořád dokola to samé
-                    self.health[target.id] = .needsLogin
+                    self.lastEvent = "Switch to \(target.label) failed: \(error.message)"
+                    switch error {
+                    case .dead:
+                        // mrtvý login vyřadit, dokud ho uživatel nepřidá znovu
+                        self.health[target.id] = .needsLogin
+                        self.notify("Account switch failed", body: error.message)
+                    case .transient:
+                        // Poslední dobrá data cíle nechat (jinak by decide() viděl „vše došlo"
+                        // a spustil předání Codexu), jen další pokus odložit. Ruční Use
+                        // upozorní vždy — uživatel na výsledek čeká.
+                        self.switchRetryAfter = Date().addingTimeInterval(300)
+                        let manual = reason == "switched manually"
+                        if manual || Date().timeIntervalSince(self.lastTransientNotice) > 3600 {
+                            self.lastTransientNotice = Date()
+                            self.notify("Account switch failed", body: error.message)
+                        }
+                    }
                 } else {
+                    self.switchRetryAfter = .distantPast
                     self.lastEvent = "Now on \(target.label) (\(reason))"
                     Sounds.shared.sessionStart()
                     self.notify("Claude → \(target.label)",
@@ -594,16 +724,32 @@ final class AccountRotation {
         }
     }
 
+    private enum SwitchFailure {
+        case dead(String)        // login účtu je mrtvý — přidat znovu
+        case transient(String)   // síť, zápis — zkusit později
+        var message: String {
+            switch self { case .dead(let m), .transient(let m): return m }
+        }
+    }
+
     /// Běží na `queue`. Vrací nil při úspěchu.
-    private func switchClaudeCode(to target: ClaudeAccount) -> String? {
+    private func switchClaudeCode(to target: ClaudeAccount) -> SwitchFailure? {
         var accounts = RotationPrefs.accounts
         let active = resolveActiveId(accounts)
         if active == target.id { return nil }
+        // Bez oauthAccount by ~/.claude.json dál ukazoval předchozí účet a appka by nový
+        // login považovala za ten starý (a mohla by obnovit token, který patří Claude Code).
+        guard let oaJSON = target.oauthAccountJSON, let oaData = oaJSON.data(using: .utf8),
+              let targetOA = try? JSONSerialization.jsonObject(with: oaData) as? [String: Any]
+        else { return .dead("account details for \(target.label) are missing. Log in with it in Claude Code and add it again.") }
 
         if let active, let i = accounts.firstIndex(where: { $0.id == active }) {
-            // Claude Code mohl token mezitím obnovit — rotovaný refresh token uložit zpět.
-            if let current = ClaudeCodeLogin.readCreds(), let login = OAuthCreds(current)?.loginOnlyJSON {
-                Keychain.write(service: accounts[i].keychainService, account: "notch", value: login)
+            // Claude Code mohl token mezitím obnovit — rotovaný refresh token uložit zpět, než
+            // položku přepíšeme. Identitu ověřit (během /login už může patřit jinému účtu);
+            // když to nejde, raději nepřepínat, ať o login aktivního účtu nepřijdeme.
+            if let current = ClaudeCodeLogin.readCreds(), let creds = OAuthCreds(current),
+               !syncActiveSlot(accounts[i], creds: creds) {
+                return .transient("couldn't confirm which account Claude Code is logged in to. Trying again later.")
             }
             if let oa = ClaudeCodeLogin.readOAuthAccount(),
                let d = try? JSONSerialization.data(withJSONObject: oa) {
@@ -616,24 +762,40 @@ final class AccountRotation {
         }
 
         // Cílový token obnovit předem — Claude Code ho dostane čerstvý a od teď je jeho.
-        guard case .some(.some(_)) = ownedToken(target) else {
-            return "the saved login for \(target.label) expired. Log in with it in Claude Code and add it again."
+        let access: String
+        switch ownedToken(target) {
+        case .some(.some(let t)): access = t
+        case .some(.none):
+            return .dead("the saved login for \(target.label) expired. Log in with it in Claude Code and add it again.")
+        case .none:
+            return .transient("couldn't reach Anthropic to refresh the login for \(target.label). Trying again later.")
         }
-        guard let raw = Keychain.read(service: target.keychainService) else {
-            return "no saved login for \(target.label)"
+        guard let raw = Keychain.read(service: target.keychainService), let targetCreds = OAuthCreds(raw) else {
+            return .dead("no saved login for \(target.label)")
         }
-        guard let targetCreds = OAuthCreds(raw) else { return "the saved login for \(target.label) is damaged" }
+        // Obnovený token se musel uložit — jinak by Claude Code dostal zneplatněný refresh token.
+        guard targetCreds.access == access else {
+            return .dead("couldn't save the refreshed login for \(target.label). Log in with it in Claude Code and add it again.")
+        }
         var merged: [String: Any] = [:]
-        if let cur = ClaudeCodeLogin.readCreds(), let d = cur.data(using: .utf8),
+        let previous = ClaudeCodeLogin.readCreds()
+        // Položka existuje, ale nejde přečíst (zamčený Keychain, chyba `security`) —
+        // nezapisovat: přišli bychom o mcpOAuth a při chybě configu bychom ji smazali.
+        if previous == nil, Keychain.accountAttribute(service: ClaudeCodeLogin.service) != nil {
+            return .transient("couldn't read Claude Code's Keychain item. Trying again later.")
+        }
+        if let cur = previous, let d = cur.data(using: .utf8),
            let obj = try? JSONSerialization.jsonObject(with: d) as? [String: Any] { merged = obj }
         merged["claudeAiOauth"] = targetCreds.oauth
         guard let md = try? JSONSerialization.data(withJSONObject: merged),
               let mergedJSON = String(data: md, encoding: .utf8),
               ClaudeCodeLogin.writeCreds(mergedJSON)
-        else { return "couldn't write to the Claude Code Keychain item" }
-        if let json = target.oauthAccountJSON, let d = json.data(using: .utf8),
-           let oa = try? JSONSerialization.jsonObject(with: d) as? [String: Any] {
-            ClaudeCodeLogin.writeOAuthAccount(oa)
+        else { return .transient("couldn't write to the Claude Code Keychain item") }
+        guard ClaudeCodeLogin.writeOAuthAccount(targetOA) else {
+            // Keychain a ~/.claude.json se nesmí rozejít — vrátit předchozí login.
+            if let previous { _ = ClaudeCodeLogin.writeCreds(previous) }
+            else { Keychain.delete(service: ClaudeCodeLogin.service) }   // předtím nebyl přihlášený
+            return .transient("couldn't update ~/.claude.json, Claude Code stays on the previous account")
         }
         RotationPrefs.activeId = target.id
         return nil
@@ -713,7 +875,7 @@ final class AccountRotation {
 
     /// Jedna řádka do islandu: „▸ work 40% · personal out 2h · codex 12%".
     func summaryLine() -> String {
-        guard !RotationPrefs.accounts.isEmpty else { return "rotation: no accounts (right-click → Rotation)" }
+        guard !RotationPrefs.accounts.isEmpty else { return "rotation: no accounts (Settings → Accounts → Set up…)" }
         var parts: [String] = []
         for key in RotationPrefs.order {
             let isTarget = key == currentTarget
@@ -776,8 +938,11 @@ extension AccountRotation {
             let id = String(key.dropFirst("claude:".count))
             guard let a = accounts.first(where: { $0.id == id }) else { continue }
             let active = id == activeId
-            // aktivní účet: stejná čísla jako hlavička islandu (běžný fetcher nebo rotace)
-            if active, let current {
+            // Aktivní účet bez vlastních dat rotace: čísla z běžného fetcheru (hlavička).
+            // Rotace měří přímo tokenem toho účtu, fetcher může číst i in-app login.
+            var hasOwnData = false
+            if case .ok = health[id] ?? .unknown { hasOwnData = true }
+            if active, !hasOwnData, let current {
                 rows.append(Self.usageRow(label: a.label, active: true, quota: current))
                 continue
             }

@@ -110,8 +110,13 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     func windowDidResize(_ notification: Notification) { rebuild() }
 
-    /// Stav účtu se změnil mimo okno (kvóty, login) — překreslit, pokud je otevřené.
-    func accountsChanged() { refresh() }
+    /// Stav účtu se změnil mimo okno (kvóty, login) — překreslit, pokud je otevřená sekce
+    /// Accounts. Jiné sekce účty neukazují a přestavba by zavřela popup nebo přerušila
+    /// tažení slideru (přichází po každém pollu, cca 5 min).
+    func accountsChanged() {
+        guard pane == .accounts else { return }
+        refresh()
+    }
 
     /// Překreslí obsah okna (stavy účtů) bez přecentrování.
     private func refresh() {

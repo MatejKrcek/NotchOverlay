@@ -42,7 +42,20 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
     private func rebuild() {
         guard let window else { return }
         let order = RotationPrefs.order
-        let height: CGFloat = 280 + CGFloat(order.count) * rowH + (message == nil ? 0 : 24)
+        let rotation = AccountRotation.shared
+        let inner = width - 2 * margin
+        // Nápověda dole: výška podle textu, ať se nic neořízne.
+        var lines = [
+            "To add an account: run /login in Claude Code with it, then click Add current Claude Code login. Repeat for each account.",
+            "Switch accounts with /login, never /logout: /logout signs the account out on Anthropic's side, so the login saved here stops working too.",
+            "Switching changes the login Claude Code uses. New sessions pick it up; restart sessions that are already running.",
+        ]
+        if let e = rotation.lastEvent { lines.insert("Last: \(e)", at: 0) }
+        let help = NSTextField(wrappingLabelWithString: lines.joined(separator: "\n"))
+        help.font = .systemFont(ofSize: 11)
+        help.textColor = .secondaryLabelColor
+        let helpH = ceil(help.cell?.cellSize(forBounds: NSRect(x: 0, y: 0, width: inner, height: 10_000)).height ?? 60)
+        let height: CGFloat = 214 + CGFloat(order.count) * rowH + (message == nil ? 0 : 24) + helpH
         var frame = window.frame
         let newSize = window.frameRect(forContentRect: NSRect(x: 0, y: 0, width: width, height: height)).size
         frame.origin.y += frame.height - newSize.height   // horní hrana zůstává na místě
@@ -50,7 +63,6 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
         window.setFrame(frame, display: true)
 
         let v = NSView(frame: NSRect(x: 0, y: 0, width: width, height: height))
-        let inner = width - 2 * margin
         var y = height - 40
 
         // Zapnutí + práh + Codex akce
@@ -79,7 +91,6 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
         addLabel(v, "PRIORITY - TOP IS USED FIRST", x: margin, y: y, w: inner, small: true)
         y -= rowH - 4
 
-        let rotation = AccountRotation.shared
         for (i, key) in order.enumerated() {
             let isCodex = key == RotationPrefs.codexKey
             let id = isCodex ? "" : String(key.dropFirst("claude:".count))
@@ -116,7 +127,7 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
                 button("Remove", 70, #selector(removeAccount(_:)),
                        tip: "Forget this account here. Claude Code's own login stays as it is.")
                 button("Use", 50, #selector(useAccount(_:)), enabled: !isActive,
-                       tip: "Switch Claude Code to this account now. With rotation on, a higher-priority account with room left takes over again.")
+                       tip: "Switch Claude Code to this account now. With rotation on, it stays on this account until it runs out.")
             }
             button("↓", 30, #selector(moveDown(_:)), enabled: i < order.count - 1)
             button("↑", 30, #selector(moveUp(_:)), enabled: i > 0)
@@ -140,15 +151,7 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
             y -= 24
         }
 
-        var lines = [
-            "To add an account: run /login in Claude Code with it, then click Add current Claude Code login. Repeat for each account.",
-            "Switching changes the login Claude Code uses. New sessions pick it up; restart sessions that are already running.",
-        ]
-        if let e = rotation.lastEvent { lines.insert("Last: \(e)", at: 0) }
-        let help = NSTextField(wrappingLabelWithString: lines.joined(separator: "\n"))
-        help.font = .systemFont(ofSize: 11)
-        help.textColor = .secondaryLabelColor
-        help.frame = NSRect(x: margin, y: 12, width: inner, height: max(40, y - 16))
+        help.frame = NSRect(x: margin, y: 14, width: inner, height: helpH)
         v.addSubview(help)
 
         window.contentView = v
