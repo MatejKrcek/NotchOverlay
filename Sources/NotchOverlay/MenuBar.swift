@@ -12,6 +12,8 @@ final class MenuBarController: NSObject {
     private var signedOut = false
     /// Token Claude Code prošel — hodnota je poslední známá, ne aktuální.
     private var stale = false
+    /// Hodnota z minulého běhu appky (QuotaCache), první dotaz ještě neprošel.
+    private var cached = false
     private var infoItem: NSMenuItem?
 
     func start() { applyMode() }
@@ -47,9 +49,14 @@ final class MenuBarController: NSObject {
             fiveHour = q.fiveHour
             signedOut = false
             stale = false
+            cached = false
+        case .cached(let q, _):
+            fiveHour = q.fiveHour
+            cached = true
         case .signedOut:
             signedOut = true
             stale = false
+            cached = false
         case .stale:
             stale = true
         default:
@@ -91,12 +98,13 @@ final class MenuBarController: NSObject {
             f.dateFormat = "H:mm"
             return f.string(from: reset)
         }
-        return stale ? "~\(w.pct)%" : "\(w.pct)%"
+        return (stale || cached) ? "~\(w.pct)%" : "\(w.pct)%"
     }
 
     private func detail() -> String {
         if signedOut { return "Claude: not signed in" }
-        let staleNote = stale ? " · stale (Claude Code token expired, waiting for refresh)" : ""
+        let staleNote = stale ? " · stale (Claude Code token expired, waiting for refresh)"
+            : cached ? " · last known value, updating…" : ""
         guard let w = fiveHour, let reset = w.resetsAt, reset.timeIntervalSinceNow > 0 else {
             return "5h session: no active window" + staleNote
         }

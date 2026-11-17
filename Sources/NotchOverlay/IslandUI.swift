@@ -65,6 +65,8 @@ final class IslandController: NSObject {
     private var usage = UsageSummary()
     private var quota: QuotaStatus?          // poslední úspěšná data (drží se i při výpadku)
     private var quotaState: QuotaFetchState = .starting
+    /// Kdy byla uložená data z disku stažená. nil = `quota` pochází z dotazu v tomhle běhu.
+    private var quotaCachedAt: Date?
     var onSignInRequested: (() -> Void)?
     /// Overlay lze schovat z hlavního okna; stav se drží i přes rebuild obrazovek.
     private(set) var overlayVisible = true
@@ -206,7 +208,19 @@ final class IslandController: NSObject {
     func update(quotaState: QuotaFetchState) {
         guard quotaState != self.quotaState else { return }
         self.quotaState = quotaState
-        if case .ok(let status) = quotaState { quota = status }
+        switch quotaState {
+        case .ok(let status):
+            quota = status
+            quotaCachedAt = nil
+        case .cached(let status, let savedAt):
+            quota = status
+            quotaCachedAt = savedAt
+        case .signedOut where quotaCachedAt != nil:
+            // hodnotu z minulého běhu nevydávat za stav odhlášeného účtu
+            quota = nil
+            quotaCachedAt = nil
+        default: break
+        }
         render()
     }
 
@@ -656,8 +670,11 @@ final class IslandController: NSObject {
         ]))
         let pct: String
         if let p = quota?.fiveHour?.pct {
-            // „~" = poslední známá hodnota, token Claude Code prošel a čeká se na obnovu
-            if case .stale = quotaState { pct = "~\(p)" } else { pct = "\(p)" }
+            // „~" = poslední známá hodnota: token Claude Code prošel a čeká se na obnovu,
+            // nebo je to hodnota z minulého běhu a první dotaz ještě neprošel
+            if case .stale = quotaState { pct = "~\(p)" }
+            else if quotaCachedAt != nil { pct = "~\(p)" }
+            else { pct = "\(p)" }
         }
         else if case .signedOut = quotaState { pct = "–" }
         else { pct = "?" }
@@ -672,10 +689,9 @@ final class IslandController: NSObject {
     private func quotaHeaderText() -> String {
         guard let quota else {
             switch quotaState {
-            case .starting: return "quota: loading…"
+            case .starting, .ok, .cached: return "quota: loading…"
             case .rateLimited(let until): return "quota: rate limited · retry in \(remainingString(until: until))"
             case .signedOut: return "quota: not signed in"
-            case .ok: return "quota: loading…"
             case .stale: return "quota: waiting for Claude Code token"
             }
         }
@@ -686,6 +702,19 @@ final class IslandController: NSObject {
             if let fh = quota.fiveHour { parts.append("5h: ~\(fh.pct)%") }
             if let wk = quota.sevenDay { parts.append("week: ~\(wk.pct)%") }
             parts.append("stale \(elapsedString(since: since)) · Claude Code token expired")
+            return parts.joined(separator: " · ")
+        }
+        if let savedAt = quotaCachedAt {
+            // Hodnota z minulého běhu appky: místo „resets in" její stáří a proč ještě není nová.
+            var parts: [String] = []
+            if let fh = quota.fiveHour { parts.append("5h: ~\(fh.pct)%") }
+            if let wk = quota.sevenDay { parts.append("week: ~\(wk.pct)%") }
+            parts.append("from \(elapsedString(since: savedAt)) ago")
+            if case .rateLimited(let until) = quotaState {
+                parts.append("rate limited, retry in \(remainingString(until: until))")
+            } else {
+                parts.append("updating…")
+            }
             return parts.joined(separator: " · ")
         }
         var parts: [String] = []

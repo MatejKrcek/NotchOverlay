@@ -228,6 +228,13 @@ final class AccountRotation {
     private var loginResolved = false   // main
     /// Pracovní adresář poslední session — Codex se otevře tam.
     var latestCwd: (() -> String?)?
+    /// true = QuotaFetcher stahuje kvóty tokenem Claude Code, tedy pro aktivní účet.
+    /// S vypnutou rotací se pak rotace na aktivní účet neptá podruhé — usage API má
+    /// na účet malý limit (sdílený s Claude Code) a po pár restartech vracelo 429.
+    /// Volá se z `queue`.
+    var activeQuotaFromFetcher: (() -> Bool)?
+    /// Poslední kvóty od QuotaFetcheru (token Claude Code) a kdy přišly (main).
+    private var fetcherQuota: (q: QuotaStatus, at: Date)?
 
     private(set) var health: [String: Health] = [:]       // main
     private(set) var activeId: String?                    // main
@@ -253,6 +260,7 @@ final class AccountRotation {
 
     private let queue = DispatchQueue(label: "account-rotation", qos: .utility)
     private var timer: DispatchSourceTimer?
+    private var lastPollAll = Date.distantPast   // queue
     private let interval: TimeInterval = 300
     private let clientId = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
     private var switching = false   // main
@@ -270,13 +278,38 @@ final class AccountRotation {
     func start() {
         let t = DispatchSource.makeTimerSource(queue: queue)
         t.schedule(deadline: .now() + 3, repeating: interval)
-        t.setEventHandler { [weak self] in self?.pollAll() }
+        t.setEventHandler { [weak self] in
+            guard let self else { return }
+            // Nastavení otevřené hned po startu už kvóty obnovilo (refreshIfStale) —
+            // druhý dotaz o 2 s později by jen čerpal malý limit usage API (429).
+            if Date().timeIntervalSince(self.lastPollAll) < 30 { return }
+            self.pollAll()
+        }
         t.resume()
         timer = t
         updateDrivesQuota()
     }
 
     func refreshNow() { queue.async { self.pollAll() } }
+
+    /// Obnoví kvóty aktivního účtu přes QuotaFetcher (main.swift).
+    var refreshActiveQuota: (() -> Void)?
+
+    /// Tlačítko Refresh: všechny účty. S vypnutou rotací se rotace na aktivní účet
+    /// neptá (viz poll), ten proto obnoví QuotaFetcher.
+    func manualRefresh() {
+        refreshNow()
+        if !RotationPrefs.enabled { refreshActiveQuota?() }
+    }
+
+    /// Kvóty, které QuotaFetcher stáhl tokenem Claude Code — patří aktivnímu účtu.
+    /// S vypnutou rotací jsou jediným zdrojem kvót aktivního účtu (viz poll). Volat na main.
+    func ingestFetcherQuota(_ q: QuotaStatus) {
+        fetcherQuota = (q, Date())
+        guard !drivesQuota, let id = activeId else { return }
+        health[id] = .ok(q, at: Date())
+        onChange?()
+    }
 
     func settingsChanged() {
         updateDrivesQuota()
@@ -380,13 +413,16 @@ final class AccountRotation {
     // MARK: Polling
 
     private func pollAll() {
+        lastPollAll = Date()
         let accounts = RotationPrefs.accounts
         let active = resolveActiveId(accounts)
         let oa = ClaudeCodeLogin.readOAuthAccount()
         let login = (email: oa?["emailAddress"] as? String, uuid: oa?["accountUuid"] as? String)
         var fresh: [String: Health] = [:]
+        var activeFromFetcher = false
         for a in accounts {
-            fresh[a.id] = poll(a, isActive: a.id == active)
+            if let h = poll(a, isActive: a.id == active) { fresh[a.id] = h }
+            else { activeFromFetcher = true }
         }
         DispatchQueue.main.async {
             for (id, h) in fresh {
@@ -394,11 +430,19 @@ final class AccountRotation {
                 if case .ok = self.health[id] ?? .unknown, !Self.isDefinitive(h) { continue }
                 self.health[id] = h
             }
+            let loginChanged = self.loginResolved && login.uuid != self.currentLogin.uuid
+            // Kvóty od QuotaFetcheru patří předchozímu loginu — novému účtu je nepřiřazovat,
+            // fetcher po onLoginChange stáhne nové.
+            if loginChanged { self.fetcherQuota = nil }
+            // Aktivní účet bez vlastního dotazu: kvóty od QuotaFetcheru (první mohly přijít
+            // dřív, než byl activeId známý).
+            if activeFromFetcher, let id = active, let f = self.fetcherQuota {
+                self.health[id] = .ok(f.q, at: f.at)
+            }
             self.activeId = active
             self.polledOnce = true
             self.activeStale = active.map { fresh[$0] == .unknown } ?? false
             if self.activeStale { self.watchActiveToken() }
-            let loginChanged = self.loginResolved && login.uuid != self.currentLogin.uuid
             self.loginResolved = true
             self.currentLogin = login
             if loginChanged { self.onLoginChange?() }
@@ -428,7 +472,8 @@ final class AccountRotation {
         return accounts.contains { $0.id == stored } ? stored : nil
     }
 
-    private func poll(_ a: ClaudeAccount, isActive: Bool) -> Health {
+    /// nil = aktivní účet se neptá sám, kvóty mu dodá QuotaFetcher (ingestFetcherQuota).
+    private func poll(_ a: ClaudeAccount, isActive: Bool) -> Health? {
         guard a.accountUuid != nil else { return .needsLogin }   // starý záznam bez identity
         let token: String
         if isActive {
@@ -437,6 +482,8 @@ final class AccountRotation {
             else { return .unknown }
             if let e = c.expiresAt, e.timeIntervalSinceNow < 60 { return .unknown }
             syncActiveSlot(a, creds: c)
+            // Rotace vypnutá a QuotaFetcher se ptá stejným tokenem → druhý dotaz nedělat.
+            if !RotationPrefs.enabled, activeQuotaFromFetcher?() == true { return nil }
             token = t
         } else {
             switch ownedToken(a) {

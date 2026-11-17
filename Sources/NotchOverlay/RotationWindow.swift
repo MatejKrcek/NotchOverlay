@@ -234,5 +234,5 @@ final class RotationWindowController: NSObject, NSWindowDelegate {
         }
     }
 
-    @objc private func refreshNow(_ sender: NSButton) { AccountRotation.shared.refreshNow() }
+    @objc private func refreshNow(_ sender: NSButton) { AccountRotation.shared.manualRefresh() }
 }

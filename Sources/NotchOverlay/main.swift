@@ -51,6 +51,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             self?.latestSessions.max(by: { $0.lastActivity < $1.lastActivity })?.cwd
         }
         rotation.onActiveQuota = { [weak self] state in self?.quota.onState?(state) }
+        // S vypnutou rotací stahuje kvóty aktivního účtu QuotaFetcher (stejným tokenem
+        // Claude Code) a rotace je převezme — jinak by se usage API ptaly obě (429).
+        quota.onClaudeCodeQuota = { q in rotation.ingestFetcherQuota(q) }
+        rotation.activeQuotaFromFetcher = { [weak self] in self?.quota.usesClaudeCodeToken ?? false }
+        rotation.refreshActiveQuota = { [weak self] in self?.quota.refreshNow() }
         rotation.onLoginChange = { [weak self] in self?.quota.credentialsChanged() }
         rotation.onChange = { [weak self] in
             self?.island.contentChanged()
@@ -70,7 +75,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let before = self.claudeStatusLabel()
             let beforeQuota = self.lastQuota
             self.quotaFetchState = state
-            if case .ok(let status) = state { self.lastQuota = status }
+            if case .ok(let status) = state {
+                self.lastQuota = status
+                QuotaCache.save(status)
+            }
             // Otevřené nastavení ať hned ukáže nový stav účtu (např. po in-app loginu)
             // i nové procento okna u přihlášeného účtu.
             if self.claudeStatusLabel() != before || self.lastQuota != beforeQuota {
@@ -112,6 +120,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         MainWindowController.shared.currentQuota = { [weak self] in self?.lastQuota }
         if UserDefaults.standard.bool(forKey: "overlayHidden") {
             island.setVisible(false)
+        }
+
+        // Poslední známé kvóty z minulého běhu hned po startu (jako „~"), ať island
+        // neukazuje „?", než projde první dotaz (usage API ho po startu často odmítne).
+        if let c = QuotaCache.load() {
+            quota.onState?(.cached(c.status, savedAt: c.savedAt))
         }
 
         monitor.start()

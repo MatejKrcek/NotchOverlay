@@ -1,11 +1,11 @@
 import Foundation
 
-struct QuotaWindow: Equatable {
+struct QuotaWindow: Equatable, Codable {
     var pct: Int
     var resetsAt: Date?
 }
 
-struct QuotaStatus: Equatable {
+struct QuotaStatus: Equatable, Codable {
     var fiveHour: QuotaWindow?
     var sevenDay: QuotaWindow?
     var sevenDayOpus: QuotaWindow?
@@ -16,12 +16,47 @@ struct QuotaStatus: Equatable {
 enum QuotaFetchState: Equatable {
     case starting
     case ok(QuotaStatus)
+    /// Poslední známé hodnoty z disku (QuotaCache) hned po startu appky, dokud
+    /// nedoběhne první úspěšný dotaz. UI je ukazuje jako přibližné („~").
+    case cached(QuotaStatus, savedAt: Date)
     case rateLimited(until: Date)
     case signedOut
     /// Půjčený token Claude Code prošel a appka ho sama neobnovuje (viz QuotaFetcher).
     /// UI drží poslední hodnoty, ale musí je označit jako neaktuální. `since` = kdy
     /// jsme to zjistili poprvé (drží se, ať se UI zbytečně nepřekresluje).
     case stale(since: Date)
+}
+
+/// Poslední úspěšně načtené kvóty na disku. Po restartu appky je island ukáže
+/// hned, místo „?" až do prvního úspěšného dotazu (usage API může první dotaz
+/// odmítnout s 429 a další pokus přijde až za minutu).
+enum QuotaCache {
+    private static let key = "quotaCache"
+    private struct Entry: Codable { var status: QuotaStatus; var savedAt: Date }
+
+    static func save(_ status: QuotaStatus) {
+        guard let data = try? JSONEncoder().encode(Entry(status: status, savedAt: Date())) else { return }
+        UserDefaults.standard.set(data, forKey: key)
+    }
+
+    /// Okna, jejichž reset už proběhl, zahodí: jejich procento už neplatí.
+    static func load() -> (status: QuotaStatus, savedAt: Date)? {
+        guard let data = UserDefaults.standard.data(forKey: key),
+              let e = try? JSONDecoder().decode(Entry.self, from: data) else { return nil }
+        let now = Date()
+        func live(_ w: QuotaWindow?) -> QuotaWindow? {
+            guard let w else { return nil }
+            if let r = w.resetsAt, r <= now { return nil }
+            return w
+        }
+        var q = e.status
+        q.fiveHour = live(q.fiveHour)
+        q.sevenDay = live(q.sevenDay)
+        q.sevenDayOpus = live(q.sevenDayOpus)
+        q.sevenDayFable = live(q.sevenDayFable)
+        guard q.fiveHour != nil || q.sevenDay != nil else { return nil }
+        return (q, e.savedAt)
+    }
 }
 
 /// Reálný stav rate limitů z api.anthropic.com/api/oauth/usage.
@@ -41,6 +76,15 @@ final class QuotaFetcher {
     /// Když vrací true, kvóty dodává rotace účtů (AccountRotation) a tenhle
     /// fetcher stojí — jinak by island přepisovaly dva zdroje.
     var isPaused: (() -> Bool)?
+    /// Kvóty stažené tokenem Claude Code (= účet, ke kterému je Claude Code přihlášený).
+    /// Rotace je převezme pro aktivní účet a nemusí se ptát podruhé (main).
+    var onClaudeCodeQuota: ((QuotaStatus) -> Void)?
+    /// true = fetcher stahuje kvóty tokenem Claude Code (ne vlastním loginem), tedy
+    /// pro účet, ke kterému je Claude Code přihlášený. Výchozí true: rotace se může
+    /// ptát dřív než první fetch (otevřené nastavení hned po startu) a každý dotaz
+    /// navíc čerpá malý limit usage API (po pár restartech za sebou vracelo 429).
+    /// Píše quota queue, čte rotace — Bool, benigní race (jako drivesQuota).
+    private(set) var usesClaudeCodeToken = true
 
     private let queue = DispatchQueue(label: "quota-fetch", qos: .utility)
     private var timer: DispatchSourceTimer?
@@ -57,6 +101,9 @@ final class QuotaFetcher {
     /// tak ho kontrolujeme každých 30 s, ať po obnově dohoníme stav rychle.
     private let staleInterval: TimeInterval = 30
     private var backoffUntil: Date = .distantPast
+    /// Kolik 429 za sebou — každé další zdvojí čekání (60 s, 120 s, 240 s, pak 5 min).
+    private var rateLimitStreak = 0
+    private var lastRequestAt = Date.distantPast   // queue
     private var staleSince: Date?
 
     private static let ownService = "NotchOverlay-credentials"
@@ -64,11 +111,21 @@ final class QuotaFetcher {
     private let keychainServices = [ownService, claudeCodeService]
 
     private enum TokenLookup {
-        case token(String)
+        /// `claudeCode` = token patří Claude Code (jen půjčený, ne vlastní login).
+        case token(String, claudeCode: Bool)
         /// Žádné credentials (ani vlastní, ani Claude Code) / explicitní odhlášení.
         case none
         /// Půjčený token Claude Code je prošlý — neobnovujeme ho, čekáme na Claude Code.
         case borrowedExpired
+    }
+
+    /// Ruční „Refresh" v okně účtů: nový dotaz hned, ale ne do 30 s od předchozího
+    /// a ne během backoffu po 429 (to hlídá fetch).
+    func refreshNow() {
+        queue.async {
+            guard Date().timeIntervalSince(self.lastRequestAt) > 30 else { return }
+            self.fetch()
+        }
     }
 
     func start() {
@@ -95,13 +152,20 @@ final class QuotaFetcher {
 
     private func fetch() {
         if isPaused?() == true { return }
-        guard Date() >= backoffUntil else {
+        // 1 s tolerance: timer naplánovaný na konec backoffu nesmí skončit tady.
+        guard Date() >= backoffUntil.addingTimeInterval(-1) else {
             push(.rateLimited(until: backoffUntil))
             return
         }
         let token: String
-        switch currentToken() {
-        case .token(let t):
+        let lookup = currentToken()
+        switch lookup {
+        case .token(_, let cc): usesClaudeCodeToken = cc
+        case .borrowedExpired: usesClaudeCodeToken = true
+        case .none: usesClaudeCodeToken = false
+        }
+        switch lookup {
+        case .token(let t, _):
             token = t
         case .none:
             debug("keychain: žádné credentials")
@@ -126,6 +190,9 @@ final class QuotaFetcher {
 
         let sem = DispatchSemaphore(value: 0)
         var result: QuotaStatus?
+        var rateLimited = false
+        var retryAfter: Double?
+        lastRequestAt = Date()
         URLSession.shared.dataTask(with: req) { data, resp, err in
             defer { sem.signal() }
             if let err { self.debug("network: \(err.localizedDescription)"); return }
@@ -133,10 +200,8 @@ final class QuotaFetcher {
             guard http.statusCode == 200 else {
                 if http.statusCode == 401 { self.cachedToken = nil; self.cachedExpiry = nil }
                 if http.statusCode == 429 {
-                    let retry = (http.value(forHTTPHeaderField: "Retry-After")).flatMap(Double.init) ?? 600
-                    self.backoffUntil = Date().addingTimeInterval(retry)
-                    self.debug("http 429 — backoff \(Int(retry)) s")
-                    self.push(.rateLimited(until: self.backoffUntil))
+                    rateLimited = true
+                    retryAfter = http.value(forHTTPHeaderField: "Retry-After").flatMap(Double.init)
                 } else {
                     self.debug("http \(http.statusCode): \(String(data: data, encoding: .utf8)?.prefix(300) ?? "")")
                 }
@@ -150,12 +215,35 @@ final class QuotaFetcher {
             else { self.debug("v odpovědi nejsou známá okna; dump: \(String(data: data, encoding: .utf8)?.prefix(500) ?? "")") }
         }.resume()
         sem.wait()
+        if rateLimited {
+            handleRateLimit(retryAfter: retryAfter)
+            return
+        }
         // Jen úspěch přepisuje data — po přechodné chybě si UI drží poslední hodnotu.
         if let result {
             if staleSince != nil { debug("keychain: token obnoven, kvóty zase aktuální") }
+            if rateLimitStreak > 0 { debug("kvóty zase načtené po \(rateLimitStreak)× 429") }
+            rateLimitStreak = 0
             setStale(false)
             push(.ok(result))
+            if case .token(_, true) = lookup {
+                DispatchQueue.main.async { self.onClaudeCodeQuota?(result) }
+            }
         }
+    }
+
+    /// 429: čekat, kolik řekne server (Retry-After), ale aspoň 60 s; každé další 429
+    /// za sebou čekání zdvojí až na 5 min. Pak hned zkusit znovu, ne až na další
+    /// 5min tik. Server dřív posílal Retry-After: 3600, od 2026-11-16 posílá 0.
+    /// Volat jen z `queue`.
+    private func handleRateLimit(retryAfter: Double?) {
+        rateLimitStreak += 1
+        let floor = min(interval, 60 * pow(2, Double(min(rateLimitStreak, 4) - 1)))
+        let wait = min(3600, max(floor, retryAfter ?? 0))
+        backoffUntil = Date().addingTimeInterval(wait)
+        debug("http 429 — Retry-After \(retryAfter.map { String(Int($0)) } ?? "none"), další pokus za \(Int(wait)) s")
+        timer?.schedule(deadline: .now() + wait, repeating: staleSince == nil ? interval : staleInterval)
+        push(.rateLimited(until: backoffUntil))
     }
 
     /// Přepne interval timeru: 30 s dokud čekáme na obnovu půjčeného tokenu,
@@ -225,19 +313,21 @@ final class QuotaFetcher {
     private func currentToken() -> TokenLookup {
         // Uživatel se explicitně odhlásil — nepoužívat ani fallback credentials.
         guard !UserDefaults.standard.bool(forKey: "claudeSignedOut") else { return .none }
-        if let t = cachedToken, let e = cachedExpiry, e.timeIntervalSinceNow > 60 { return .token(t) }
+        // cachedToken plní jen obnova vlastního loginu
+        if let t = cachedToken, let e = cachedExpiry, e.timeIntervalSinceNow > 60 { return .token(t, claudeCode: false) }
         guard let creds = readCredentials() else { return .none }
+        let borrowed = creds.service == Self.claudeCodeService
         if let exp = creds.expiresAt, exp.timeIntervalSinceNow > 60 {
-            return .token(creds.access)
+            return .token(creds.access, claudeCode: borrowed)
         }
-        if creds.service == Self.claudeCodeService {
+        if borrowed {
             // Cizí refresh token nepoužívat (rotace by odhlásila Claude Code).
-            return creds.expiresAt == nil ? .token(creds.access) : .borrowedExpired
+            return creds.expiresAt == nil ? .token(creds.access, claudeCode: true) : .borrowedExpired
         }
         if let refresh = creds.refresh, !refresh.isEmpty, let fresh = refreshAccessToken(refresh) {
-            return .token(fresh)
+            return .token(fresh, claudeCode: false)
         }
-        return .token(creds.access)  // poslední pokus — třeba ještě platí
+        return .token(creds.access, claudeCode: false)  // poslední pokus — třeba ještě platí
     }
 
     private func readCredentials() -> (service: String, access: String, refresh: String?, expiresAt: Date?)? {
