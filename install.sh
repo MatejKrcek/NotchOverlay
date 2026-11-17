@@ -1,7 +1,8 @@
 #!/bin/bash
 # Sestaví NotchOverlay.app, nainstaluje do /Applications a zaregistruje
 # LaunchAgent (start po přihlášení, restart po pádu, Quit z menu = zůstane
-# vypnutá do dalšího přihlášení / ručního spuštění).
+# vypnutá do dalšího přihlášení / ručního spuštění). Když má uživatel
+# v nastavení vypnuté „Open at login", agent se nezapíše a appka se jen spustí.
 #
 # Instalace bez klonování repa:
 #   curl -fsSL https://raw.githubusercontent.com/MatejKrcek/NotchOverlay/main/install.sh | bash
@@ -70,6 +71,26 @@ EOF
 codesign --force --sign - "$APP"
 
 # --- launch agent ---
+# Přepínač „Open at login" v nastavení ukládá volbu do defaults; vypnutou
+# volbu aktualizace nepřepíše (chybějící klíč = zapnuto, jako dřív).
+LAUNCH_AT_LOGIN="$(defaults read "$LABEL" launchAtLogin 2>/dev/null || echo 1)"
+
+# --- (re)start ---
+pkill -f 'NotchOverlay' 2>/dev/null || true
+launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
+
+if [ "$LAUNCH_AT_LOGIN" = "0" ]; then
+	rm -f "$AGENT"
+	# open by jen aktivoval končící starou instanci → počkat, až skončí
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		pgrep -x NotchOverlay >/dev/null || break
+		sleep 0.3
+	done
+	open "$APP" --args --agent
+	echo "OK: $APP nainstalováno a spuštěno (start po přihlášení je v nastavení vypnutý)"
+	exit 0
+fi
+
 mkdir -p "$(dirname "$AGENT")"
 cat > "$AGENT" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -87,9 +108,6 @@ cat > "$AGENT" <<EOF
 </plist>
 EOF
 
-# --- (re)start ---
-pkill -f 'NotchOverlay' 2>/dev/null || true
-launchctl bootout "gui/$UID/$LABEL" 2>/dev/null || true
 # bootout je asynchronní — bootstrap hned po něm občas vrátí EIO, proto retry
 for i in 1 2 3 4 5; do
 	if launchctl bootstrap "gui/$UID" "$AGENT" 2>/dev/null; then

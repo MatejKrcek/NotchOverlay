@@ -62,7 +62,9 @@ Or from a cloned repo:
 
 > Difference: installing from source also adds a LaunchAgent (the app starts
 > at login and restarts after a crash). Homebrew/DMG just installs the app —
-> you launch it yourself from /Applications.
+> you launch it yourself from /Applications. Either way, Settings → General →
+> **Open at login** turns the start at login on or off. Updating from source
+> keeps your choice.
 
 ## First launch
 
@@ -85,8 +87,9 @@ Or from a cloned repo:
 ## Uninstall
 
 ```sh
-# Homebrew:
+# Homebrew (the rm removes the login item, if Open at login was on):
 brew uninstall --cask notchoverlay
+rm -f ~/Library/LaunchAgents/com.matejkrcek.notchoverlay.plist
 
 # DMG / from source:
 launchctl bootout gui/$UID/com.matejkrcek.notchoverlay 2>/dev/null
@@ -94,7 +97,7 @@ rm -rf /Applications/NotchOverlay.app ~/Library/LaunchAgents/com.matejkrcek.notc
 ```
 
 Quit without uninstalling: app window → **Quit NotchOverlay** (stays off
-until your next login).
+until your next login, or until you open it again if Open at login is off).
 
 ## Development without installing
 
@@ -133,7 +136,7 @@ until your next login).
   per-session tokens and/or spend estimate, quota in the bar, header second
   line (Codex limit from local session data / Fable 5 limit / account rotation),
   Claude accounts with their 5-hour, weekly and Fable usage, Codex/Gemini
-  sign in/out, and Quit.
+  sign in/out, Open at login, and Quit.
 - **Stale quota indicator** — the app reads the Claude Code OAuth token and
   never refreshes it itself (refresh tokens rotate). When that token expires,
   values are shown as `~12%` with a "stale" note and the Keychain is re-read

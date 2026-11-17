@@ -1,4 +1,5 @@
 import AppKit
+import ServiceManagement
 
 /// Nastavení appky ve stylu Nastavení systému: vlevo sekce, vpravo skupiny řádků
 /// (popisek + krátké vysvětlení vlevo, ovladač vpravo). Otevře se kliknutím na appku
@@ -64,6 +65,7 @@ final class MainWindowController: NSObject, NSWindowDelegate {
     // Ovladače aktuální sekce (ostatní sekce = nil).
     private var overlaySwitch: NSSwitch?
     private var soundsSwitch: NSSwitch?
+    private var launchSwitch: NSSwitch?
     private var sizeSlider: NSSlider?
     private var panelSlider: NSSlider?
     private var quotaSwitch: NSSwitch?
@@ -140,10 +142,11 @@ final class MainWindowController: NSObject, NSWindowDelegate {
         let titlebar = max(28, window.frame.height - window.contentLayoutRect.height)
         let keepScroll = builtPane == pane ? scrollView?.contentView.bounds.origin : nil
 
-        for case let s? in [overlaySwitch, soundsSwitch, quotaSwitch, menuBarSwitch, allAccountsSwitch] as [NSSwitch?] {
+        for case let s? in [overlaySwitch, soundsSwitch, launchSwitch, quotaSwitch, menuBarSwitch,
+                            allAccountsSwitch] as [NSSwitch?] {
             s.target = nil
         }
-        overlaySwitch = nil; soundsSwitch = nil; sizeSlider = nil; panelSlider = nil
+        overlaySwitch = nil; soundsSwitch = nil; launchSwitch = nil; sizeSlider = nil; panelSlider = nil
         quotaSwitch = nil; menuBarSwitch = nil; allAccountsSwitch = nil
         spend24 = nil; spend7 = nil; spend31 = nil; spendYear = nil
 
@@ -237,10 +240,27 @@ final class MainWindowController: NSObject, NSWindowDelegate {
                                target: self, action: #selector(menuBarStyleChanged(_:))))
         f.endGroup()
 
-        f.group()
+        f.group("Startup")
+        let launch = LaunchAtLogin.state
+        let launchDetail: String
+        if !LaunchAtLogin.canManage {
+            launchDetail = "Move NotchOverlay to the Applications folder and open it from there first."
+        } else if launch == .blockedBySystem {
+            launchDetail = "Turned off in System Settings → General → Login Items. Switch on to open it there."
+        } else {
+            launchDetail = "Opens NotchOverlay in the background when you log in to your Mac."
+        }
+        let launchSwitch = f.switchRow("Open at login", detail: launchDetail,
+                                       target: self, action: #selector(toggleLaunchAtLogin(_:)))
+        launchSwitch.isEnabled = LaunchAtLogin.canManage
+        launchSwitch.state = launch == .on ? .on : .off
+        self.launchSwitch = launchSwitch
         let quit = f.button("Quit", target: self, action: #selector(quit(_:)))
         quit.hasDestructiveAction = true
-        f.row("Quit NotchOverlay", detail: "Stops the app until your next login or until you open it again.",
+        f.row("Quit NotchOverlay",
+              detail: launch == .on
+                ? "Stops the app until your next login or until you open it again."
+                : "Stops the app until you open it again.",
               control: quit)
         f.endGroup()
     }
@@ -560,6 +580,26 @@ final class MainWindowController: NSObject, NSWindowDelegate {
 
     @objc private func toggleSounds(_ sender: NSSwitch) {
         Sounds.shared.enabled = sender.state == .on
+    }
+
+    @objc private func toggleLaunchAtLogin(_ sender: NSSwitch) {
+        let on = sender.state == .on
+        // Agent existuje, ale uživatel ho vypnul v Nastavení systému — povolit jde jen tam.
+        if on && LaunchAtLogin.state == .blockedBySystem {
+            SMAppService.openSystemSettingsLoginItems()
+            sender.state = .off
+            return
+        }
+        do {
+            try LaunchAtLogin.setEnabled(on)
+        } catch {
+            sender.state = on ? .off : .on
+            let alert = NSAlert()
+            alert.messageText = "Couldn't change Open at login"
+            alert.informativeText = error.localizedDescription
+            alert.runModal()
+        }
+        refresh()   // popis řádku Quit závisí na stavu
     }
 
     @objc private func perSessionChanged(_ sender: NSPopUpButton) {

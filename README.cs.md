@@ -61,7 +61,9 @@ Nebo z naklonovaného repa:
 
 > Rozdíl: instalace ze zdrojáků přidá i LaunchAgent (appka startuje po
 > přihlášení a po pádu se restartuje). Homebrew/DMG appku jen nainstaluje —
-> spouštíš ji sám z /Applications.
+> spouštíš ji sám z /Applications. V obou případech start po přihlášení
+> zapneš nebo vypneš v Nastavení → General → **Open at login**. Update ze
+> zdrojáků tvou volbu zachová.
 
 ## První spuštění
 
@@ -84,8 +86,9 @@ Nebo z naklonovaného repa:
 ## Odinstalace
 
 ```sh
-# Homebrew:
+# Homebrew (rm smaže start po přihlášení, pokud byl Open at login zapnutý):
 brew uninstall --cask notchoverlay
+rm -f ~/Library/LaunchAgents/com.matejkrcek.notchoverlay.plist
 
 # DMG / zdrojáky:
 launchctl bootout gui/$UID/com.matejkrcek.notchoverlay 2>/dev/null
@@ -93,7 +96,8 @@ rm -rf /Applications/NotchOverlay.app ~/Library/LaunchAgents/com.matejkrcek.notc
 ```
 
 Ukončení bez odinstalace: okno appky → **Quit NotchOverlay** (zůstane
-vypnutá do dalšího přihlášení).
+vypnutá do dalšího přihlášení, nebo do ručního spuštění, pokud je Open at
+login vypnutý).
 
 ## Vývoj bez instalace
 
@@ -131,7 +135,7 @@ vypnutá do dalšího přihlášení).
   zvuky, tokeny a/nebo odhad spendu per session, kvóta v liště, druhá řádka
   hlavičky (Codex limit z lokálních session dat / Fable 5 limit / rotace účtů),
   Claude účty s využitím 5h, týdenního a Fable limitu, Codex/Gemini se
-  sign in/out a Quit.
+  sign in/out, Open at login a Quit.
 - **Indikace neaktuální kvóty** — appka čte OAuth token Claude Code a sama ho
   nikdy neobnovuje (refresh tokeny rotují). Když token prošel, hodnoty se
   ukazují jako `~12%` s poznámkou „stale" a Keychain se čte každých 30 s,
